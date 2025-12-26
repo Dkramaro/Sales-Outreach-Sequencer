@@ -1,0 +1,61 @@
+# Google Apps Script
+.clasp.json
+.claspignore
+
+# Environment variables
+.env
+*.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Operating System
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# Node modules (if using clasp or local development)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Google Apps Script local development
+.clasprc.json
+.clasp-dev.json
+
+# Credentials and sensitive data
+credentials.json
+token.json
+service-account.json
+
