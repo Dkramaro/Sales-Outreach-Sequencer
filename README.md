@@ -4,7 +4,7 @@ A powerful Gmail Add-on that automates multi-step email outreach sequences with 
 
 [![Google Apps Script](https://img.shields.io/badge/Google%20Apps%20Script-4285F4?style=flat&logo=google&logoColor=white)](https://script.google.com)
 [![Gmail](https://img.shields.io/badge/Gmail-EA4335?style=flat&logo=gmail&logoColor=white)](https://gmail.com)
-[![Version](https://img.shields.io/badge/version-2.6-blue.svg)](https://github.com/yourusername/sos)
+[![Version](https://img.shields.io/badge/version-2.6-blue.svg)](https://github.com/Dkramaro/Sales-Outreach-Sequencer)
 
 ## 🚀 Value Proposition
 
