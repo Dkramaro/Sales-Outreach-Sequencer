@@ -293,7 +293,21 @@ function buildAddOn(e) {
     // ============================================================
     // FIRST-TIME USER: Show Getting Started Wizard (unless skipped)
     // ============================================================
-    const skipWizard = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
+    const userProps = PropertiesService.getUserProperties();
+    let skipWizard = userProps.getProperty("SKIP_WIZARD") === "true";
+    
+    // MIGRATION FIX: For users who were using the system BEFORE onboarding was added,
+    // they never went through the wizard, so SKIP_WIZARD was never set.
+    // If user has real contacts AND has sent at least one email, they're clearly past onboarding.
+    // This is a one-time migration that sets SKIP_WIZARD for existing users.
+    if (!skipWizard && realContacts.length > 0) {
+      const hasEmailHistory = realContacts.some(c => c.lastEmailDate && c.lastEmailDate !== "");
+      if (hasEmailHistory) {
+        userProps.setProperty("SKIP_WIZARD", "true");
+        skipWizard = true;
+      }
+    }
+    
     if (realContacts.length === 0 && !skipWizard) {
       return buildGettingStartedWizard(stats, contacts);
     }

@@ -828,6 +828,23 @@ function displayContactWithSelectionSimplified(section, contact, isChecked, orig
     originParamsJson: JSON.stringify(originDetails.viewParams || {})
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // END SEQUENCE BUTTON VISIBILITY RULES - DO NOT MODIFY WITHOUT UNDERSTANDING:
+  // ═══════════════════════════════════════════════════════════════════════════
+  // During onboarding (SKIP_WIZARD !== "true"):
+  //   - User sees demo contacts first, then adds their first real contact
+  //   - End Sequence button is HIDDEN for ALL contacts (demo AND real)
+  //   - This prevents users from breaking the onboarding flow
+  //
+  // After onboarding (SKIP_WIZARD === "true"):
+  //   - Set when user sends their first real email (completes onboarding)
+  //   - End Sequence button is SHOWN for all real contacts
+  //   - Demo contacts shouldn't exist after onboarding (auto-deleted)
+  //
+  // The SKIP_WIZARD property is set in:
+  //   1. 09_EmailProcessing.gs - after first real email is sent
+  //   2. 02_Core.gs - migration fix for existing users with email history
+  // ═══════════════════════════════════════════════════════════════════════════
   const wizardCompleted = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
   const isDemoContact = contact.email && contact.email.toLowerCase().includes("example.com");
 
@@ -842,6 +859,7 @@ function displayContactWithSelectionSimplified(section, contact, isChecked, orig
         .setText("in")
         .setOpenLink(CardService.newOpenLink().setUrl(linkedInSearchUrl)));
   }
+  // Show End Sequence button ONLY after onboarding is complete, and not for demo contacts
   if (wizardCompleted && !isDemoContact) {
     buttonSet.addButton(CardService.newTextButton()
         .setText("❌")
