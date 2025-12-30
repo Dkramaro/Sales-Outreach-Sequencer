@@ -343,8 +343,39 @@ function buildAddOn(e) {
       card.addSection(actionSection);
     }
 
-    // Secondary suggestions (collapsible)
-    if (highPriorityPaused.length > 0 || completedThisWeek > 0 || readyContacts.length === 0) {
+    // Onboarding suggestions for new users (< 5 contacts)
+    if (realContacts.length < 5) {
+      const onboardingSection = CardService.newCardSection()
+          .setHeader("💡 Getting Started Tips");
+
+      if (readyContacts.length === 0) {
+        onboardingSection.addWidget(CardService.newTextParagraph()
+            .setText("✅ All caught up! No emails to send right now."));
+      }
+
+      onboardingSection.addWidget(CardService.newTextParagraph()
+          .setText("📖 <b>New here?</b> Read the Help guide to learn all features - bulk sending, call tracking, templates & more!"));
+
+      onboardingSection.addWidget(CardService.newButtonSet()
+          .addButton(CardService.newTextButton()
+              .setText("📖 Help & Instructions")
+              .setOnClickAction(CardService.newAction()
+                  .setFunctionName("openHelpDocumentation"))));
+
+      onboardingSection.addWidget(CardService.newTextParagraph()
+          .setText("➕ <b>Add more contacts</b> to build your pipeline. Have ZoomInfo? Importing is super quick - just open a ZoomInfo email!"));
+
+      onboardingSection.addWidget(CardService.newButtonSet()
+          .addButton(CardService.newTextButton()
+              .setText("➕ Add Contacts")
+              .setOnClickAction(CardService.newAction()
+                  .setFunctionName("buildContactManagementCard")
+                  .setParameters({page: '1'}))));
+
+      card.addSection(onboardingSection);
+    } 
+    // Regular suggestions for established users (5+ contacts)
+    else if (highPriorityPaused.length > 0 || completedThisWeek > 0 || readyContacts.length === 0) {
       const suggestionsSection = CardService.newCardSection()
           .setHeader("💡 Suggestions")
           .setCollapsible(true)
@@ -404,6 +435,13 @@ function buildAddOn(e) {
         .setOnClickAction(CardService.newAction()
             .setFunctionName("buildSettingsCard")));
 
+    navSection.addWidget(CardService.newDivider());
+
+    navSection.addWidget(CardService.newTextButton()
+        .setText("❓ Help & Instructions")
+        .setOnClickAction(CardService.newAction()
+            .setFunctionName("openHelpDocumentation")));
+
     card.addSection(navSection);
 
     // Display database info (not collapsible, with clear button)
@@ -413,12 +451,16 @@ function buildAddOn(e) {
     infoSection.addWidget(CardService.newTextParagraph()
         .setText("All your contacts are stored in: <b>" + spreadsheet.getName() + "</b>"));
 
+    // Get the Contacts sheet gid to open directly to that tab
+    const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
+    const contactsSheetGid = contactsSheet ? contactsSheet.getSheetId() : 0;
+
     infoSection.addWidget(CardService.newButtonSet()
         .addButton(CardService.newTextButton()
             .setText("📊 Open Contacts Sheet")
             .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
             .setOpenLink(CardService.newOpenLink()
-                .setUrl("https://docs.google.com/spreadsheets/d/" + spreadsheetId))));
+                .setUrl("https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/edit#gid=" + contactsSheetGid))));
 
     card.addSection(infoSection);
 
@@ -530,8 +572,9 @@ function buildGettingStartedWizard(stats, contacts) {
     card.addSection(tryItSection);
   }
 
-  // Optional: Customize email templates
+  // Optional: Customize email templates (collapsible)
   const templatesSection = CardService.newCardSection()
+      .setCollapsible(true)
       .setHeader("✏️ Customize Templates (Optional)");
 
   const availableSequences = getAvailableSequences();
@@ -565,23 +608,6 @@ function buildGettingStartedWizard(stats, contacts) {
   }
 
   card.addSection(templatesSection);
-
-  // Main action: Add first real contact
-  const addContactSection = CardService.newCardSection()
-      .setHeader("📝 Add Your First Contact");
-
-  addContactSection.addWidget(CardService.newTextParagraph()
-      .setText("Add a real contact to start your email campaign:"));
-
-  addContactSection.addWidget(CardService.newButtonSet()
-      .addButton(CardService.newTextButton()
-          .setText("➕ Add Contact")
-          .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-          .setOnClickAction(CardService.newAction()
-              .setFunctionName("buildContactManagementCard")
-              .setParameters({page: '1'}))));
-
-  card.addSection(addContactSection);
 
   // Quick tips
   const tipsSection = CardService.newCardSection()
@@ -1122,11 +1148,6 @@ function buildDemoEmailSuccessCard() {
       .setText("By default, emails are created as <b>drafts</b> so you can review them before sending.\n\n" +
                "If you prefer, you can enable auto-send for first emails in <b>Settings</b>. (We don't recommend this until you're comfortable with the templates.)"));
 
-  tipSection.addWidget(CardService.newTextButton()
-      .setText("⚙️ Go to Settings")
-      .setOnClickAction(CardService.newAction()
-          .setFunctionName("buildSettingsCard")));
-
   card.addSection(tipSection);
 
   // Next steps
@@ -1134,7 +1155,7 @@ function buildDemoEmailSuccessCard() {
       .setHeader("Next Steps");
 
   nextSection.addWidget(CardService.newTextParagraph()
-      .setText("Now add your real contacts to start your email campaigns!"));
+      .setText("🎯 <b>Recommended:</b> Add yourself as your first contact! This way you can see exactly how your emails look before sending to external contacts."));
 
   nextSection.addWidget(CardService.newButtonSet()
       .addButton(CardService.newTextButton()
@@ -1148,6 +1169,65 @@ function buildDemoEmailSuccessCard() {
       .setText("Go to Dashboard →")
       .setOnClickAction(CardService.newAction()
           .setFunctionName("buildFullDashboard")));
+
+  card.addSection(nextSection);
+
+  return card.build();
+}
+
+/**
+ * Success card shown after user sends their first REAL email (not demo)
+ * This celebrates completion of onboarding and guides to next steps
+ */
+function buildFirstRealEmailSuccessCard() {
+  const card = CardService.newCardBuilder();
+
+  card.setHeader(CardService.newCardHeader()
+      .setTitle("🚀 You're Ready!")
+      .setSubtitle("Outreach at scale unlocked")
+      .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/celebration_black_48dp.png"));
+
+  // Success message
+  const successSection = CardService.newCardSection()
+      .setHeader("🎉 First Email Sent!");
+  
+  successSection.addWidget(CardService.newTextParagraph()
+      .setText("Congratulations! You've completed the setup and sent your first email draft.\n\n" +
+               "<b>📬 Check your Gmail Drafts folder</b> to review and send it.\n\n" +
+               "You're now ready to scale your outreach with automated email sequences!"));
+
+  card.addSection(successSection);
+
+  // Learn more section
+  const learnSection = CardService.newCardSection()
+      .setHeader("📖 Master All Features");
+  
+  learnSection.addWidget(CardService.newTextParagraph()
+      .setText("Want to get the most out of this tool? Our Help guide covers:\n\n" +
+               "• Bulk email sending & follow-ups\n" +
+               "• Call management & tracking\n" +
+               "• Template customization\n" +
+               "• Analytics & reply tracking\n" +
+               "• ZoomInfo integration for quick imports"));
+
+  learnSection.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+          .setText("📖 Read Help Guide")
+          .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+          .setOnClickAction(CardService.newAction()
+              .setFunctionName("openHelpDocumentation"))));
+
+  card.addSection(learnSection);
+
+  // Next steps - go straight to dashboard
+  const nextSection = CardService.newCardSection();
+
+  nextSection.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+          .setText("🚀 Go to Dashboard")
+          .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+          .setOnClickAction(CardService.newAction()
+              .setFunctionName("buildFullDashboard"))));
 
   card.addSection(nextSection);
 

@@ -324,6 +324,10 @@ function displayContactWithSelectionGrouped(section, contact, isChecked, originD
     originParamsJson: JSON.stringify(originDetails.viewParams || {})
   };
 
+  // Hide end sequence button during onboarding wizard (until user completes wizard and goes to dashboard)
+  const wizardCompleted = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
+  const isDemoContact = contact.email && contact.email.toLowerCase().includes("example.com");
+
   const buttonSet = CardService.newButtonSet();
   buttonSet.addButton(CardService.newTextButton()
       .setText("👤 View")
@@ -335,11 +339,14 @@ function displayContactWithSelectionGrouped(section, contact, isChecked, originD
         .setText("in")
         .setOpenLink(CardService.newOpenLink().setUrl(linkedInSearchUrl)));
   }
-  buttonSet.addButton(CardService.newTextButton()
-      .setText("❌")
-      .setOnClickAction(CardService.newAction()
-          .setFunctionName("markContactCompleted")
-          .setParameters(markCompleteParams)));
+  // Only show end sequence button after wizard is complete and not for demo contacts
+  if (wizardCompleted && !isDemoContact) {
+    buttonSet.addButton(CardService.newTextButton()
+        .setText("❌")
+        .setOnClickAction(CardService.newAction()
+            .setFunctionName("markContactCompleted")
+            .setParameters(markCompleteParams)));
+  }
   section.addWidget(buttonSet);
 }
 
@@ -398,6 +405,10 @@ function displayContactWithSelection(section, contact, isChecked, originDetails)
     originParamsJson: JSON.stringify(originDetails.viewParams || {})
   };
 
+  // Hide end sequence button during onboarding wizard (until user completes wizard and goes to dashboard)
+  const wizardCompleted = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
+  const isDemoContact = contact.email && contact.email.toLowerCase().includes("example.com");
+
   const buttonSet = CardService.newButtonSet();
   buttonSet.addButton(CardService.newTextButton()
       .setText("👤 View")
@@ -409,11 +420,14 @@ function displayContactWithSelection(section, contact, isChecked, originDetails)
         .setText("in")
         .setOpenLink(CardService.newOpenLink().setUrl(linkedInSearchUrl)));
   }
-  buttonSet.addButton(CardService.newTextButton()
-      .setText("❌")
-      .setOnClickAction(CardService.newAction()
-          .setFunctionName("markContactCompleted")
-          .setParameters(markCompleteParams)));
+  // Only show end sequence button after wizard is complete and not for demo contacts
+  if (wizardCompleted && !isDemoContact) {
+    buttonSet.addButton(CardService.newTextButton()
+        .setText("❌")
+        .setOnClickAction(CardService.newAction()
+            .setFunctionName("markContactCompleted")
+            .setParameters(markCompleteParams)));
+  }
   section.addWidget(buttonSet);
   
   // Separator

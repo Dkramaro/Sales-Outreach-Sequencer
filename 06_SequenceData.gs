@@ -67,6 +67,7 @@ function getSequenceSheetName(sequenceName) {
 
 /**
  * Creates a new sequence sheet with ROW-BASED structure
+ * Includes variables reference column and user instructions
  * @param {string} sequenceName The name of the sequence (without "Sequence-" prefix)
  * @returns {boolean} Success status
  */
@@ -89,18 +90,58 @@ function createSequenceSheet(sequenceName) {
     // Create new sheet
     const sheet = spreadsheet.insertSheet(sheetName);
     
-    // Set up headers: Step, Name, Subject, Body
-    const headers = ["Step", "Name", "Subject", "Body"];
+    // Set up headers: Step, Name, Subject, Body, (empty), Variables, Instructions
+    const headers = ["Step", "Name", "Subject", "Body", "", "📋 VARIABLES", "📖 INSTRUCTIONS"];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
     sheet.setFrozenRows(1);
     
-    // Add default template data for this sequence
+    // Add default template data for this sequence with variables and instructions
     const defaultTemplates = [
-      [1, "Introduction Email", `{{company}} and ${sequenceName} Services?`, `Hi {{firstName}},\n\nI'm reaching out about ${sequenceName} opportunities for {{company}}.\n\nWould you be open to a quick chat to explore how we might help?\n\nBest regards,\n{{senderName}}`],
-      [2, "Quick Follow-up", `Re: {{company}} and ${sequenceName} Services?`, `Hi {{firstName}},\n\nJust a quick follow-up on my previous email about ${sequenceName} for {{company}}.\n\nAny thoughts on this?\n\nBest,\n{{senderName}}`],
-      [3, "Second Follow-up", `Following up: ${sequenceName} for {{company}}`, `Hi {{firstName}},\n\nJust following up on my earlier note in case this slipped through.\n\nWould a 15-minute chat make sense to discuss ${sequenceName} opportunities?\n\nBest,\n{{senderName}}`],
-      [4, "Value Proposition", `What we've done for similar companies`, `Hi {{firstName}},\n\nI wanted to share what we've accomplished for other companies in ${sequenceName}:\n\n1. [Specific benefit 1]\n2. [Specific benefit 2]\n3. [Specific benefit 3]\n\nWould it be helpful to hear how this might apply to {{company}} specifically?\n\nBest,\n{{senderName}}`],
-      [5, "Final Outreach", `Final check-in: ${sequenceName} opportunity for {{company}}`, `Hi {{firstName}},\n\nThis will be my final note unless I hear back.\n\nIf now isn't the right time for ${sequenceName} discussions, I completely understand. Feel free to reach out when it makes more sense.\n\nThanks for considering!\n\n{{senderName}}`]
+      [
+        1, 
+        "Introduction Email", 
+        `{{company}} and ${sequenceName} Services?`, 
+        `Hi {{firstName}},\n\nI'm reaching out about ${sequenceName} opportunities for {{company}}.\n\nWould you be open to a quick chat to explore how we might help?\n\nBest regards,\n{{senderName}}`,
+        "",
+        "{{firstName}}\n{{lastName}}\n{{email}}\n{{company}}\n{{title}}\n{{industry}}\n{{senderName}}\n{{senderCompany}}\n{{senderTitle}}",
+        "⚠️ DO NOT EDIT columns A-D directly unless you know what you're doing!\n\n✅ HOW TO EDIT:\n1. Edit Subject (column C) and Body (column D) only\n2. Use variables from column F by copying them\n3. Keep Step numbers in column A as 1,2,3,4,5\n\n❌ DO NOT:\n• Delete or rename this sheet\n• Change column headers\n• Add extra columns between A-D"
+      ],
+      [
+        2, 
+        "Quick Follow-up", 
+        "", 
+        `Hi {{firstName}},\n\nJust a quick follow-up on my previous email about ${sequenceName} for {{company}}.\n\nAny thoughts on this?\n\nBest,\n{{senderName}}`,
+        "",
+        "",
+        "Step 2-5 are REPLY emails.\nThey use 'Re: [Step 1 subject]' automatically.\nLeave the Subject column empty for these steps."
+      ],
+      [
+        3, 
+        "Second Follow-up", 
+        "", 
+        `Hi {{firstName}},\n\nJust following up on my earlier note in case this slipped through.\n\nWould a 15-minute chat make sense to discuss ${sequenceName} opportunities?\n\nBest,\n{{senderName}}`,
+        "",
+        "",
+        ""
+      ],
+      [
+        4, 
+        "Value Proposition", 
+        "", 
+        `Hi {{firstName}},\n\nI wanted to share what we've accomplished for other companies in ${sequenceName}:\n\n1. [Specific benefit 1]\n2. [Specific benefit 2]\n3. [Specific benefit 3]\n\nWould it be helpful to hear how this might apply to {{company}} specifically?\n\nBest,\n{{senderName}}`,
+        "",
+        "",
+        ""
+      ],
+      [
+        5, 
+        "Final Outreach", 
+        "", 
+        `Hi {{firstName}},\n\nThis will be my final note unless I hear back.\n\nIf now isn't the right time for ${sequenceName} discussions, I completely understand. Feel free to reach out when it makes more sense.\n\nThanks for considering!\n\n{{senderName}}`,
+        "",
+        "",
+        ""
+      ]
     ];
     
     // Add the template rows
@@ -111,6 +152,18 @@ function createSequenceSheet(sequenceName) {
     sheet.autoResizeColumn(2); // Name column
     sheet.setColumnWidth(3, 300); // Subject column
     sheet.setColumnWidth(4, 500); // Body column (wider for content)
+    sheet.setColumnWidth(5, 20);  // Empty separator column
+    sheet.setColumnWidth(6, 150); // Variables column
+    sheet.setColumnWidth(7, 300); // Instructions column
+    
+    // Style the variables and instructions columns
+    sheet.getRange(1, 6, 1, 2).setBackground("#e8f0fe").setFontColor("#1a73e8"); // Header style
+    sheet.getRange(2, 6, defaultTemplates.length, 1).setBackground("#f8f9fa").setFontFamily("Courier New");
+    sheet.getRange(2, 7, defaultTemplates.length, 1).setBackground("#fff8e1").setFontStyle("italic");
+    
+    // Set word wrap for body and instructions
+    sheet.getRange(2, 4, defaultTemplates.length, 1).setWrap(true);
+    sheet.getRange(2, 7, defaultTemplates.length, 1).setWrap(true);
     
     logAction("Sequence Creation", "Created new sequence sheet: " + sequenceName);
     return true;

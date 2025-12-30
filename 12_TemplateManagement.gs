@@ -28,9 +28,14 @@
 /* ======================== TEMPLATE MANAGEMENT UI ======================== */
 
 /**
- * Builds the Template Management card.
+ * Builds the Template Management card with paginated sequences.
+ * @param {object} e Optional event object containing page parameter
  */
-function buildTemplateManagementCard() {
+function buildTemplateManagementCard(e) {
+  // Pagination setup
+  const page = parseInt(e && e.parameters && e.parameters.page || '1');
+  const pageSize = 15; // Sequences per page
+  
   const card = CardService.newCardBuilder();
 
   // Add header
@@ -60,20 +65,32 @@ function buildTemplateManagementCard() {
 
   card.addSection(createSection);
 
-  // ============ EXISTING SEQUENCES ============
-  const sequenceSection = CardService.newCardSection()
-      .setHeader("📋 Your Sequences");
-
+  // ============ EXISTING SEQUENCES (PAGINATED) ============
   const availableSequences = getAvailableSequences();
+  const totalSequences = availableSequences.length;
+  const totalPages = Math.max(1, Math.ceil(totalSequences / pageSize));
+  const validPage = Math.min(Math.max(1, page), totalPages); // Ensure page is within bounds
+  const startIndex = (validPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalSequences);
+  const sequencesToShow = availableSequences.slice(startIndex, endIndex);
   
-  if (availableSequences.length === 0) {
+  // Build header with count info
+  let headerText = "📋 Your Sequences";
+  if (totalSequences > 0) {
+    headerText = `📋 Your Sequences (${startIndex + 1}-${endIndex} of ${totalSequences})`;
+  }
+  
+  const sequenceSection = CardService.newCardSection()
+      .setHeader(headerText);
+  
+  if (totalSequences === 0) {
     sequenceSection.addWidget(CardService.newTextParagraph()
         .setText("<font color='#666666'>No sequences yet. Create your first one above!</font>"));
   } else {
     sequenceSection.addWidget(CardService.newTextParagraph()
-        .setText(`You have <b>${availableSequences.length} sequence${availableSequences.length > 1 ? 's' : ''}</b>. Click Edit to modify templates:`));
+        .setText(`You have <b>${totalSequences} sequence${totalSequences > 1 ? 's' : ''}</b>. Click Edit to modify templates:`));
 
-    for (const sequenceName of availableSequences) {
+    for (const sequenceName of sequencesToShow) {
       // Sequence name as prominent header
       sequenceSection.addWidget(CardService.newTextParagraph()
           .setText(`<b>📋 ${sequenceName}</b>`));
@@ -94,6 +111,9 @@ function buildTemplateManagementCard() {
 
       sequenceSection.addWidget(CardService.newDivider());
     }
+    
+    // Add pagination buttons if needed
+    addPaginationButtons(sequenceSection, validPage, totalPages, "buildTemplateManagementCard", {});
   }
   card.addSection(sequenceSection);
 
@@ -706,10 +726,15 @@ function finalizeSequenceCreation() {
     // Create new sheet
     const sheet = spreadsheet.insertSheet(sheetName);
     
-    // Set up headers: Step, Name, Subject, Body
-    const headers = ["Step", "Name", "Subject", "Body"];
+    // Set up headers: Step, Name, Subject, Body, (empty), Variables, Instructions
+    const headers = ["Step", "Name", "Subject", "Body", "", "📋 VARIABLES", "📖 INSTRUCTIONS"];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
     sheet.setFrozenRows(1);
+    
+    // All available variables for reference
+    const variablesRef = "{{firstName}}\n{{lastName}}\n{{email}}\n{{company}}\n{{title}}\n{{industry}}\n{{senderName}}\n{{senderCompany}}\n{{senderTitle}}";
+    const mainInstructions = "⚠️ DO NOT EDIT columns A-D directly unless you know what you're doing!\n\n✅ HOW TO EDIT:\n1. Edit Subject (column C) and Body (column D) only\n2. Use variables from column F by copying them\n3. Keep Step numbers in column A as 1,2,3,4,5\n\n❌ DO NOT:\n• Delete or rename this sheet\n• Change column headers\n• Add extra columns between A-D";
+    const replyInstructions = "Step 2+ are REPLY emails.\nThey use 'Re: [Step 1 subject]' automatically.\nLeave the Subject column empty for these steps.";
     
     // Add template rows (only for the configured step count)
     const templateRows = [];
@@ -719,7 +744,10 @@ function finalizeSequenceCreation() {
         step,
         template.name || getDefaultStepName(step),
         template.subject || "",
-        template.body || ""
+        template.body || "",
+        "", // Empty separator column
+        step === 1 ? variablesRef : "", // Variables only in first row
+        step === 1 ? mainInstructions : (step === 2 ? replyInstructions : "") // Instructions
       ]);
     }
     
@@ -730,6 +758,18 @@ function finalizeSequenceCreation() {
     sheet.autoResizeColumn(2);
     sheet.setColumnWidth(3, 300);
     sheet.setColumnWidth(4, 500);
+    sheet.setColumnWidth(5, 20);  // Empty separator column
+    sheet.setColumnWidth(6, 150); // Variables column
+    sheet.setColumnWidth(7, 300); // Instructions column
+    
+    // Style the variables and instructions columns
+    sheet.getRange(1, 6, 1, 2).setBackground("#e8f0fe").setFontColor("#1a73e8"); // Header style
+    sheet.getRange(2, 6, templateRows.length, 1).setBackground("#f8f9fa").setFontFamily("Courier New");
+    sheet.getRange(2, 7, templateRows.length, 1).setBackground("#fff8e1").setFontStyle("italic");
+    
+    // Set word wrap for body and instructions
+    sheet.getRange(2, 4, templateRows.length, 1).setWrap(true);
+    sheet.getRange(2, 7, templateRows.length, 1).setWrap(true);
     
     SpreadsheetApp.flush();
     
@@ -762,6 +802,57 @@ function finalizeSequenceCreation() {
  */
 function createNewSequence(e) {
   return startSequenceCreationWizard(e);
+}
+
+/* ======================== EDIT IN SHEETS ======================== */
+
+/**
+ * Opens the specific sequence sheet tab in Google Sheets
+ * @param {object} e Event object with sequence parameter
+ * @returns {ActionResponse} Opens the sheet in a new tab
+ */
+function openSequenceInSheets(e) {
+  const sequenceName = e.parameters.sequence;
+  
+  if (!sequenceName) {
+    return createNotification("Error: No sequence specified.");
+  }
+  
+  const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+  if (!spreadsheetId) {
+    return createNotification("No database connected.");
+  }
+  
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheetName = getSequenceSheetName(sequenceName);
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    
+    if (!sheet) {
+      return createNotification(`Sequence sheet "${sequenceName}" not found.`);
+    }
+    
+    // Get the sheet's gid (sheet ID) to open the correct tab
+    const sheetId = sheet.getSheetId();
+    const spreadsheetUrl = spreadsheet.getUrl();
+    
+    // Construct URL with the specific sheet tab
+    const sheetUrl = spreadsheetUrl + "#gid=" + sheetId;
+    
+    // Return an action response that opens the URL
+    return CardService.newActionResponseBuilder()
+      .setOpenLink(CardService.newOpenLink()
+          .setUrl(sheetUrl)
+          .setOpenAs(CardService.OpenAs.FULL_SIZE)
+          .setOnClose(CardService.OnClose.NOTHING))
+      .setNotification(CardService.newNotification()
+          .setText(`Opening "${sequenceName}" in Google Sheets...`))
+      .build();
+      
+  } catch (error) {
+    console.error("Error opening sequence in sheets: " + error);
+    return createNotification("Error opening sheet: " + error.message);
+  }
 }
 
 /* ======================== SEQUENCE DUPLICATION ======================== */
@@ -1441,8 +1532,18 @@ function showSequenceTemplatesEditor(e) {
   configSection.addWidget(CardService.newTextParagraph()
       .setText(`<font color='#1a73e8'><b>✓ Sequence ends after Step ${currentStepCount}</b></font>`));
   
-  // Rename and Delete options
+  // Edit in Sheets, Rename and Delete options
   configSection.addWidget(CardService.newDivider());
+  
+  // Edit in Sheets button - opens the sequence sheet directly
+  configSection.addWidget(CardService.newTextButton()
+      .setText("📝 Edit in Google Sheets")
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor("#34a853")
+      .setOnClickAction(CardService.newAction()
+          .setFunctionName("openSequenceInSheets")
+          .setParameters({ sequence: sequenceName })));
+  
   configSection.addWidget(CardService.newButtonSet()
       .addButton(CardService.newTextButton()
           .setText("✏️ Rename Sequence")
@@ -1816,6 +1917,14 @@ function editStepTemplate(e) {
                 rowIndex: rowIndex,
                 isNew: isNew.toString()
               }))));
+  
+  // Edit in Sheets option
+  formSection.addWidget(CardService.newDivider());
+  formSection.addWidget(CardService.newTextButton()
+      .setText("📝 Edit in Google Sheets Instead")
+      .setOnClickAction(CardService.newAction()
+          .setFunctionName("openSequenceInSheets")
+          .setParameters({ sequence: sequenceName })));
   
   card.addSection(formSection);
   

@@ -86,18 +86,54 @@ function buildSettingsCard() {
      .setValue(ccEmails));
  card.addSection(ccSection);
  
- // --- Signature From Google Doc Section ---
- const signatureSection = CardService.newCardSection()
-     .setHeader("Email Signature from Google Doc");
- const signatureDocId = userProps.getProperty("SIGNATURE_DOC_ID") || "";
- signatureSection.addWidget(CardService.newTextParagraph()
-     .setText("Automatically append a signature from a Google Doc. The Doc must be shared so 'anyone with the link can view'."));
- signatureSection.addWidget(CardService.newTextInput()
-     .setFieldName("signatureDocUrlOrId")
-     .setTitle("Google Doc URL or File ID for Signature")
-     .setHint("e.g., https://docs.google.com/document/d/1a2b3c.../edit")
-     .setValue(signatureDocId));
- card.addSection(signatureSection);
+// --- Signature From Google Doc Section ---
+const signatureSection = CardService.newCardSection()
+    .setHeader("Email Signature from Google Doc");
+const signatureDocId = userProps.getProperty("SIGNATURE_DOC_ID") || "";
+const signatureEnabled = userProps.getProperty("SIGNATURE_ENABLED") === 'true';
+
+if (!signatureDocId) {
+    // First-time setup: Show setup button
+    signatureSection.addWidget(CardService.newTextParagraph()
+        .setText("Create a Google Doc for your email signature. The doc will have 0 margins for perfect email formatting."));
+    signatureSection.addWidget(CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+            .setText("📝 Setup Signature")
+            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("createSignatureDoc"))));
+} else {
+    // Signature exists: Show view button and toggle
+    try {
+        const sigDoc = DriveApp.getFileById(signatureDocId);
+        signatureSection.addWidget(CardService.newKeyValue()
+            .setTopLabel("Signature Document")
+            .setContent(sigDoc.getName())
+            .setOpenLink(CardService.newOpenLink()
+                .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")));
+    } catch(e) {
+        signatureSection.addWidget(CardService.newTextParagraph()
+            .setText("⚠️ Error accessing signature document. It may have been deleted."));
+    }
+    
+    signatureSection.addWidget(CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+            .setText("👁️ View Signature")
+            .setOpenLink(CardService.newOpenLink()
+                .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")))
+        .addButton(CardService.newTextButton()
+            .setText("🔄 Create New Signature")
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("createSignatureDoc"))));
+    
+    // Toggle to enable/disable signature
+    signatureSection.addWidget(CardService.newSelectionInput()
+        .setType(CardService.SelectionInputType.SWITCH)
+        .setTitle("Include Signature in Emails")
+        .setFieldName("signatureEnabled")
+        .addItem("Automatically append signature to all emails", "true", signatureEnabled));
+}
+card.addSection(signatureSection);
 
  // --- Step 2 PDF Attachment Section ---
  const attachmentSection = CardService.newCardSection()
@@ -204,12 +240,15 @@ const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADS
  if (spreadsheetId) {
      try {
          const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+         // Get the Contacts sheet gid to open directly to that tab
+         const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
+         const contactsSheetGid = contactsSheet ? contactsSheet.getSheetId() : 0;
          databaseSection.addWidget(CardService.newKeyValue()
               .setTopLabel("Connected Spreadsheet")
               .setContent(spreadsheet.getName())
               .setBottomLabel(`ID: ${spreadsheetId}`)
               .setOpenLink(CardService.newOpenLink()
-                   .setUrl("https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/edit")));
+                   .setUrl("https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/edit#gid=" + contactsSheetGid)));
          
          // Disconnect button
          databaseSection.addWidget(CardService.newButtonSet()
@@ -249,20 +288,153 @@ card.addSection(databaseSection);
  return card.build();
 }
 
+/* ======================== SIGNATURE DOCUMENT SETUP ======================== */
+
+/**
+* Creates a new Google Doc for email signature with 0 margins and a pre-formatted table.
+* IMPORTANT: Uses table format because pulling plain text from Docs breaks formatting.
+*/
+function createSignatureDoc() {
+  try {
+    // Create a new Google Doc
+    const doc = DocumentApp.create("Email Signature - SoS Outreach");
+    const docId = doc.getId();
+    
+    // Set all margins to 0 (in points)
+    const body = doc.getBody();
+    body.setMarginTop(0);
+    body.setMarginBottom(0);
+    body.setMarginLeft(0);
+    body.setMarginRight(0);
+    
+    // Add instructional text at the top
+    const instructionText = body.appendParagraph("⚠️ IMPORTANT: Your signature MUST use the table format below.");
+    instructionText.setForegroundColor("#cc0000");
+    instructionText.editAsText().setBold(true).setFontSize(11);
+    
+    const tipsPara = body.appendParagraph(
+      "Delete this instruction text when done. Replace the placeholder text in the table with your info. " +
+      "The first column is for your logo (merged cells). Keep it relatively small!"
+    );
+    tipsPara.setForegroundColor("#666666");
+    tipsPara.editAsText().setFontSize(9);
+    
+    body.appendParagraph(" "); // Spacing
+    
+    // Create a 2-column, 4-row table for the signature
+    const table = body.appendTable();
+    
+    // Row 1: Logo cell (will be merged) + Name
+    const row1 = table.appendTableRow();
+    const logoCell1 = row1.appendTableCell("🖼️ YOUR LOGO HERE");
+    const nameCell = row1.appendTableCell("Your Full Name");
+    
+    // Row 2: Logo cell (to be merged) + Title
+    const row2 = table.appendTableRow();
+    const logoCell2 = row2.appendTableCell("(Merge cells in first column)");
+    const titleCell = row2.appendTableCell("Your Title");
+    
+    // Row 3: Logo cell (to be merged) + Email
+    const row3 = table.appendTableRow();
+    const logoCell3 = row3.appendTableCell("Use Insert > Image");
+    const emailCell = row3.appendTableCell("E: your.email@company.com");
+    
+    // Row 4: Logo cell (to be merged) + Phone
+    const row4 = table.appendTableRow();
+    const logoCell4 = row4.appendTableCell("to add your logo");
+    const phoneCell = row4.appendTableCell("M: 555-123-4567");
+    
+    // Style the table - set borders to transparent/white with 0 width
+    table.setBorderWidth(0);
+    table.setBorderColor("#FFFFFF");
+    
+    // Style logo column cells (first column)
+    [logoCell1, logoCell2, logoCell3, logoCell4].forEach(cell => {
+      cell.setBackgroundColor("#F5F5F5"); // Light grey to show it's placeholder
+      cell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
+      const cellText = cell.editAsText();
+      cellText.setFontSize(8);
+      cellText.setForegroundColor("#999999");
+      cellText.setItalic(true);
+      cell.setPaddingLeft(5);
+      cell.setPaddingRight(5);
+      cell.setPaddingTop(2);
+      cell.setPaddingBottom(2);
+      cell.setWidth(80); // Narrow column for logo
+    });
+    
+    // Style info column cells (second column)
+    // Name cell - larger, bold
+    nameCell.editAsText().setBold(true).setFontSize(12).setForegroundColor("#000000");
+    nameCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
+    nameCell.setPaddingLeft(10);
+    
+    // Title cell - medium
+    titleCell.editAsText().setFontSize(10).setForegroundColor("#333333");
+    titleCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
+    titleCell.setPaddingLeft(10);
+    
+    // Email cell - medium
+    emailCell.editAsText().setFontSize(10).setForegroundColor("#0066cc");
+    emailCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
+    emailCell.setPaddingLeft(10);
+    
+    // Phone cell - medium
+    phoneCell.editAsText().setFontSize(10).setForegroundColor("#333333");
+    phoneCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
+    phoneCell.setPaddingLeft(10);
+    
+    // Add bottom instructions
+    body.appendParagraph(" "); // Spacing
+    const bottomTips = body.appendParagraph(
+      "💡 TO MERGE LOGO CELLS: Select all 4 cells in the first column → Right-click → Merge cells\n" +
+      "💡 TO ADD LOGO: Click in merged cell → Insert → Image → Upload your logo\n" +
+      "💡 KEEP IT SMALL: Signature should be compact (see example above)\n" +
+      "💡 DELETE THESE INSTRUCTIONS when done!"
+    );
+    bottomTips.setForegroundColor("#0066cc");
+    bottomTips.editAsText().setFontSize(9);
+    
+    // Save the document
+    doc.saveAndClose();
+    
+    // Store the doc ID and enable signature by default
+    const userProps = PropertiesService.getUserProperties();
+    userProps.setProperty("SIGNATURE_DOC_ID", docId);
+    userProps.setProperty("SIGNATURE_ENABLED", "true");
+    
+    // Log the action
+    logAction("Signature Setup", `Created signature document with table format: ${docId}`);
+    
+    // Return success notification and rebuild settings card
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification()
+        .setText("✓ Signature doc created with table template! Click 'View Signature' to customize."))
+      .setNavigation(CardService.newNavigation()
+        .updateCard(buildSettingsCard()))
+      .build();
+      
+  } catch (error) {
+    console.error("Error creating signature doc: " + error);
+    logAction("Error", "Failed to create signature document: " + error.toString());
+    return createNotification("Error creating signature document: " + error.message);
+  }
+}
+
 /* ======================== SAVE SETTINGS ======================== */
 
 /**
 * Saves settings from the Settings card.
 */
 function saveSettings(e) {
- const delayDaysInput = e.formInput.delayDays;
- const senderName = e.formInput.senderName || "";
- const senderCompany = e.formInput.senderCompany || "";
- const senderTitle = e.formInput.senderTitle || "";
- const ccEmails = e.formInput.ccEmails || "";
- const pdfUrlOrId = e.formInput.pdfAttachmentUrlOrId || "";
- const signatureUrlOrId = e.formInput.signatureDocUrlOrId || "";
- const autoSendStep1Enabled = e.formInput.autoSendStep1Emails === "true";
+const delayDaysInput = e.formInput.delayDays;
+const senderName = e.formInput.senderName || "";
+const senderCompany = e.formInput.senderCompany || "";
+const senderTitle = e.formInput.senderTitle || "";
+const ccEmails = e.formInput.ccEmails || "";
+const pdfUrlOrId = e.formInput.pdfAttachmentUrlOrId || "";
+const signatureEnabled = e.formInput.signatureEnabled === "true";
+const autoSendStep1Enabled = e.formInput.autoSendStep1Emails === "true";
 
  const selectedSequencesForPdf = [];
  for (const key in e.formInput) {
@@ -293,29 +465,16 @@ function saveSettings(e) {
     }
  }
 
- let signatureDocId = "";
- if (signatureUrlOrId) {
-     signatureDocId = extractIdFromUrl(signatureUrlOrId);
-     if (!signatureDocId) {
-         return createNotification("The provided Signature Google Doc link or ID is invalid.");
-     }
-     try {
-         DriveApp.getFileById(signatureDocId).getName(); 
-     } catch (err) {
-         return createNotification("Error accessing the Signature Google Doc. Please check permissions.");
-     }
- }
-
- const userProps = PropertiesService.getUserProperties();
- userProps.setProperty("DELAY_DAYS", delayDays.toString());
- userProps.setProperty("SENDER_NAME", senderName);
- userProps.setProperty("SENDER_COMPANY", senderCompany);
- userProps.setProperty("SENDER_TITLE", senderTitle);
- userProps.setProperty("CC_EMAILS", ccEmails);
- userProps.setProperty("PDF_ATTACHMENT_FILE_ID", pdfFileId || "");
- userProps.setProperty("SEQUENCES_FOR_PDF", selectedSequencesForPdf.join(','));
- userProps.setProperty("SIGNATURE_DOC_ID", signatureDocId);
- userProps.setProperty("AUTO_SEND_STEP_1_ENABLED", autoSendStep1Enabled.toString());
+const userProps = PropertiesService.getUserProperties();
+userProps.setProperty("DELAY_DAYS", delayDays.toString());
+userProps.setProperty("SENDER_NAME", senderName);
+userProps.setProperty("SENDER_COMPANY", senderCompany);
+userProps.setProperty("SENDER_TITLE", senderTitle);
+userProps.setProperty("CC_EMAILS", ccEmails);
+userProps.setProperty("PDF_ATTACHMENT_FILE_ID", pdfFileId || "");
+userProps.setProperty("SEQUENCES_FOR_PDF", selectedSequencesForPdf.join(','));
+userProps.setProperty("SIGNATURE_ENABLED", signatureEnabled.toString());
+userProps.setProperty("AUTO_SEND_STEP_1_ENABLED", autoSendStep1Enabled.toString());
 
  if (collectedPriorities.length > 0) {
   userProps.setProperty("PRIORITY_FILTERS", collectedPriorities.join(','));
@@ -323,14 +482,14 @@ function saveSettings(e) {
   userProps.setProperty("PRIORITY_FILTERS", ""); 
  }
 
- const priorityText = collectedPriorities.length > 0 ? collectedPriorities.join(',') : 'ALL';
- const ccText = ccEmails ? ccEmails : 'None';
- const pdfText = pdfFileId ? `PDF ID: ${pdfFileId}` : 'None';
- const pdfSeqText = selectedSequencesForPdf.length > 0 ? selectedSequencesForPdf.join(', ') : 'None';
- const sigText = signatureDocId ? `Sig Doc ID: ${signatureDocId}` : 'None';
- const autoSendText = autoSendStep1Enabled ? "Auto-Send Step 1: ON" : "Auto-Send Step 1: OFF";
- 
- logAction("Update Settings", `Saved: Delay=${delayDays}, Sender=${senderName}, Priorities=${priorityText}, CC=${ccText}, Attachment=${pdfText}, PDF Sequences=[${pdfSeqText}], ${sigText}, ${autoSendText}`);
+const priorityText = collectedPriorities.length > 0 ? collectedPriorities.join(',') : 'ALL';
+const ccText = ccEmails ? ccEmails : 'None';
+const pdfText = pdfFileId ? `PDF ID: ${pdfFileId}` : 'None';
+const pdfSeqText = selectedSequencesForPdf.length > 0 ? selectedSequencesForPdf.join(', ') : 'None';
+const sigText = signatureEnabled ? "Signature: ON" : "Signature: OFF";
+const autoSendText = autoSendStep1Enabled ? "Auto-Send Step 1: ON" : "Auto-Send Step 1: OFF";
+
+logAction("Update Settings", `Saved: Delay=${delayDays}, Sender=${senderName}, Priorities=${priorityText}, CC=${ccText}, Attachment=${pdfText}, PDF Sequences=[${pdfSeqText}], ${sigText}, ${autoSendText}`);
  
  return CardService.newActionResponseBuilder()
    .setNotification(CardService.newNotification().setText("Settings saved successfully!"))

@@ -543,6 +543,16 @@ function viewContactCard(e) {
     if (editMode) {
         // EDITABLE MODE - Show text inputs for all editable fields
         detailsSection.addWidget(CardService.newTextInput()
+            .setFieldName("editFirstName")
+            .setTitle("First Name *")
+            .setValue(contact.firstName || ""));
+        
+        detailsSection.addWidget(CardService.newTextInput()
+            .setFieldName("editLastName")
+            .setTitle("Last Name *")
+            .setValue(contact.lastName || ""));
+        
+        detailsSection.addWidget(CardService.newTextInput()
             .setFieldName("editCompany")
             .setTitle("Company")
             .setValue(contact.company || ""));
@@ -765,13 +775,6 @@ function viewContactCard(e) {
         }
         // --- END MODIFICATION ---
 
-        // Compose Email (Custom)
-        actionsSection.addWidget(CardService.newTextButton()
-            .setText("Compose Custom Email")
-            .setOnClickAction(CardService.newAction()
-                .setFunctionName("composeEmail")
-                .setParameters({ email: contact.email })));
-
         // Move to Next Step (Manual)
         if (contact.status !== "Completed" && contact.status !== "Unsubscribed" && contact.currentStep < CONFIG.SEQUENCE_STEPS) {
             actionsSection.addWidget(CardService.newTextButton()
@@ -786,6 +789,8 @@ function viewContactCard(e) {
             actionsSection.addWidget(CardService.newDivider());
             actionsSection.addWidget(CardService.newTextButton()
                 .setText("End Sequence For Company (" + contact.company + ")")
+                .setBackgroundColor("#d93025")
+                .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
                 .setOnClickAction(CardService.newAction()
                     .setFunctionName("endSequenceForCompany")
                     .setParameters({ email: contact.email })));
@@ -819,6 +824,8 @@ function saveAllContactChanges(e) {
     const email = e.parameters.email;
     
     // Get all form values - handle both edit mode field names and legacy field names
+    const newFirstName = e.formInput.editFirstName !== undefined ? e.formInput.editFirstName : null;
+    const newLastName = e.formInput.editLastName !== undefined ? e.formInput.editLastName : null;
     const newCompany = e.formInput.editCompany !== undefined ? e.formInput.editCompany : null;
     const newTitle = e.formInput.editTitle !== undefined ? e.formInput.editTitle : null;
     const newPersonalPhone = e.formInput.editPersonalPhone !== undefined ? e.formInput.editPersonalPhone : null;
@@ -871,6 +878,34 @@ function saveAllContactChanges(e) {
 
         let changesMade = false;
         let logDetails = [];
+
+        // First Name
+        if (newFirstName !== null) {
+            const currentFirstName = String(rowData[CONTACT_COLS.FIRST_NAME] || "");
+            if (currentFirstName !== newFirstName) {
+                // Validate first name is not empty
+                if (!newFirstName || newFirstName.trim() === "") {
+                    return createNotification("⚠️ First Name is required and cannot be empty.");
+                }
+                rowData[CONTACT_COLS.FIRST_NAME] = newFirstName.trim();
+                changesMade = true;
+                logDetails.push(`First Name to "${newFirstName.trim()}"`);
+            }
+        }
+
+        // Last Name
+        if (newLastName !== null) {
+            const currentLastName = String(rowData[CONTACT_COLS.LAST_NAME] || "");
+            if (currentLastName !== newLastName) {
+                // Validate last name is not empty
+                if (!newLastName || newLastName.trim() === "") {
+                    return createNotification("⚠️ Last Name is required and cannot be empty.");
+                }
+                rowData[CONTACT_COLS.LAST_NAME] = newLastName.trim();
+                changesMade = true;
+                logDetails.push(`Last Name to "${newLastName.trim()}"`);
+            }
+        }
 
         // Company
         if (newCompany !== null) {

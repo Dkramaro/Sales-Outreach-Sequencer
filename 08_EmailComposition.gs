@@ -42,7 +42,7 @@ function previewEmailBeforeSend(e) {
   // Render the email with placeholders replaced
   const renderedSubject = replacePlaceholders(template.subject, contact);
   const renderedBody = replacePlaceholders(template.body, contact);
-  const signature = getEmailSignature();
+  const signatureHtml = getSignatureHtml() || "";
 
   const card = CardService.newCardBuilder();
   
@@ -71,7 +71,9 @@ function previewEmailBeforeSend(e) {
       .setCollapsible(true)
       .setNumUncollapsibleWidgets(0); // Collapsed by default
   
-  const fullBody = renderedBody + "\n\n" + signature;
+  // Strip HTML tags from signature for preview display
+  const signaturePreview = signatureHtml ? "\n\n[Signature will be appended]" : "";
+  const fullBody = renderedBody + signaturePreview;
   // Truncate if too long (keep under card limits)
   const truncatedBody = fullBody.length > 1500 ? fullBody.substring(0, 1500) + "...\n\n[Body truncated for preview]" : fullBody;
   bodySection.addWidget(CardService.newTextParagraph().setText(truncatedBody));
@@ -145,11 +147,18 @@ function sendTestEmailToSelf(e) {
   
   const renderedSubject = "[TEST] " + replacePlaceholders(template.subject, contact);
   const renderedBody = replacePlaceholders(template.body, contact);
-  const signature = getEmailSignature();
+  const signatureHtml = getSignatureHtml();
+  
+  // Build email body with signature (matching production email format)
+  const darkModeStyles = getDarkModeStyles();
+  let finalEmailBodyHtml = darkModeStyles + renderedBody.replace(/\n/g, "<br>");
+  if (signatureHtml) {
+    finalEmailBodyHtml += cleanAndWrapSignature(signatureHtml);
+  }
   
   try {
     GmailApp.sendEmail(userEmail, renderedSubject, "", {
-      htmlBody: renderedBody.replace(/\n/g, '<br>') + signature
+      htmlBody: finalEmailBodyHtml
     });
     
     return CardService.newActionResponseBuilder()
@@ -420,12 +429,16 @@ function replacePlaceholders(text, contact, senderInfoOverride) {
 /**
  * Fetches the content of a Google Doc as HTML using the Drive API.
  * This is used to retrieve a fully-formatted email signature.
- * @returns {string|null} The HTML content of the signature doc, or null if not configured or an error occurs.
+ * @returns {string|null} The HTML content of the signature doc, or null if not configured/enabled or an error occurs.
  */
 function getSignatureHtml() {
-  const docId = PropertiesService.getUserProperties().getProperty("SIGNATURE_DOC_ID");
-  if (!docId) {
-    return null; // No signature is configured, return null gracefully.
+  const userProps = PropertiesService.getUserProperties();
+  const signatureEnabled = userProps.getProperty("SIGNATURE_ENABLED") === 'true';
+  const docId = userProps.getProperty("SIGNATURE_DOC_ID");
+  
+  // Check if signature is enabled and configured
+  if (!signatureEnabled || !docId) {
+    return null; // Signature is disabled or not configured, return null gracefully.
   }
 
   try {

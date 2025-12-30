@@ -328,6 +328,19 @@ function processBulkEmails(selectedEmailsArray, stepContextValue, pageContextVal
         .build();
     }
 
+    // Check if user is still in onboarding wizard - show success card for first real email
+    const wizardCompleted = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
+    if (!wizardCompleted && (draftCount > 0 || sentCount > 0) && !processedDemoContact) {
+      // Mark wizard as complete and first real email sent
+      PropertiesService.getUserProperties().setProperty("SKIP_WIZARD", "true");
+      PropertiesService.getUserProperties().setProperty("FIRST_REAL_EMAIL_SENT", "true");
+      
+      return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification().setText("🚀 First email created! You're ready for outreach at scale!"))
+        .setNavigation(CardService.newNavigation().updateCard(buildFirstRealEmailSuccessCard()))
+        .build();
+    }
+
     let returnCard;
     if (stepContext != null) {
         const builderFn = (String(stepContext) === '2') ? viewStep2Contacts : buildSelectContactsCard;

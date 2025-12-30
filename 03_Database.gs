@@ -439,13 +439,11 @@ function setupDatabase() {
         console.log(`Sheet ${CONFIG.CONTACTS_SHEET_NAME} already exists.`);
     }
 
-    // Set up default sequence sheets instead of single templates sheet
-    const defaultSequences = ["SaaS / B2B Tech", "Ecommerce / Retail", "Local Services"];
-    for (const sequenceName of defaultSequences) {
-      const success = createSequenceSheet(sequenceName);
-      if (success) {
-        setupPerformed = true;
-      }
+    // Set up a single default sequence sheet with NBS templates
+    const defaultSequenceName = "New Business Sequence";
+    const success = createDefaultNBSSequenceSheet(defaultSequenceName);
+    if (success) {
+      setupPerformed = true;
     }
 
     // Set up Logs sheet if it doesn't exist
@@ -502,6 +500,19 @@ function setupContactsSheet(sheet) {
   // Write headers to the first row and make them bold
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
   sheet.setFrozenRows(1);
+
+  // Highlight important/required columns in yellow so users know they're essential
+  const importantColumns = [
+    CONTACT_COLS.FIRST_NAME + 1,    // First Name
+    CONTACT_COLS.EMAIL + 1,          // Email
+    CONTACT_COLS.CURRENT_STEP + 1,   // Step #
+    CONTACT_COLS.STATUS + 1,         // Status
+    CONTACT_COLS.SEQUENCE + 1        // Sequence
+  ];
+  const yellowBackground = "#FFF59D"; // Light yellow for visibility
+  importantColumns.forEach(col => {
+    sheet.getRange(1, col).setBackground(yellowBackground);
+  });
 
   // Set specific column widths for better readability
   sheet.autoResizeColumn(1); // First Name
@@ -606,7 +617,117 @@ function setupContactsSheet(sheet) {
 }
 
 /**
- * Sets up the Templates sheet with default templates
+ * Creates the default New Business Sequence with complete NBS templates
+ * Includes variables reference column and user instructions
+ * @param {string} sequenceName The name of the sequence
+ * @returns {boolean} Success status
+ */
+function createDefaultNBSSequenceSheet(sequenceName) {
+  const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+  if (!spreadsheetId) {
+    return false;
+  }
+
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheetName = getSequenceSheetName(sequenceName);
+    
+    // Check if sheet already exists
+    if (spreadsheet.getSheetByName(sheetName)) {
+      console.log("Sequence sheet already exists: " + sheetName);
+      return true;
+    }
+
+    // Create new sheet
+    const sheet = spreadsheet.insertSheet(sheetName);
+    
+    // Set up headers: Step, Name, Subject, Body, (empty), Variables, Instructions
+    const headers = ["Step", "Name", "Subject", "Body", "", "📋 VARIABLES", "📖 INSTRUCTIONS"];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    // NBS Default Templates (based on setupTemplatesSheet content)
+    const defaultTemplates = [
+      [
+        1, 
+        "Introduction Email", 
+        "{{company}} and Google Ads?",
+        "Hi {{firstName}},\n\nI'm part of Google's New Business team here in Canada.\n\nWe help a small group of high-potential companies get started on Google Ads with dedicated strategist support — including campaign setup, optimization, tagging, and competitive insights.\n\nThe program is fully covered by Google, and {{company}} looked like it could be a strong fit based on your growth and category.\n\nOpen to a quick chat to explore?",
+        "",
+        "{{firstName}}\n{{lastName}}\n{{email}}\n{{company}}\n{{title}}\n{{industry}}\n{{senderName}}\n{{senderCompany}}\n{{senderTitle}}",
+        "⚠️ DO NOT EDIT columns A-D directly unless you know what you're doing!\n\n✅ HOW TO EDIT:\n1. Edit Subject (column C) and Body (column D) only\n2. Use variables from column F by copying them\n3. Keep Step numbers in column A as 1,2,3,4,5\n\n❌ DO NOT:\n• Delete or rename this sheet\n• Change column headers\n• Add extra columns between A-D"
+      ],
+      [
+        2, 
+        "Quick Follow-up", 
+        "",
+        "Hi {{firstName}},\n\nJust a quick follow-up on my previous email. Any thoughts on this?\n\nIf it's easier, feel free to book some time directly on my calendar: [Link to your calendar if applicable]\n\nBest,\n{{senderName}}",
+        "",
+        "",
+        "Step 2-5 are REPLY emails.\nThey use 'Re: [Step 1 subject]' automatically.\nLeave the Subject column empty for these steps."
+      ],
+      [
+        3, 
+        "Second Follow-up", 
+        "",
+        "Hi {{firstName}},\n\nJust following up on my earlier note in case this slipped through.\n\nWe work with a small number of Canadian companies each quarter that are new to Google Ads, helping them launch with full support — no agency required, no cost for the service.\n\nIf {{company}} is still planning to scale this year, happy to connect and share what's working across your industry.\n\nWould a 15-minute chat make sense?",
+        "",
+        "",
+        ""
+      ],
+      [
+        4, 
+        "Value Proposition", 
+        "",
+        "Hi {{firstName}},\n\nTotally understand things can get busy — here's what our Google onboarding team has recently helped other companies accomplish:\n\n1. Activated high-intent traffic on Google Search\n2. Drove new customer growth through YouTube & Display\n3. Launched campaigns with full tagging and conversion tracking in under a week\n\nWould it be helpful to hear how this might apply to {{company}} specifically?\n\nHappy to connect when you're free.",
+        "",
+        "",
+        ""
+      ],
+      [
+        5, 
+        "Final Outreach", 
+        "",
+        "Hi {{firstName}},\n\nThis will be my final note unless I hear back.\n\nGoogle offers a fully-supported onboarding experience for new advertisers — no fees, no commitments, just a focused strategy to help brands like {{company}} scale with confidence.\n\nIf now isn't the right time, happy to revisit later. Otherwise, feel free to point me to the right contact if that's easier.\n\nThanks again for considering!",
+        "",
+        "",
+        ""
+      ]
+    ];
+    
+    // Add the template rows
+    sheet.getRange(2, 1, defaultTemplates.length, headers.length).setValues(defaultTemplates);
+    
+    // Format columns
+    sheet.autoResizeColumn(1); // Step column
+    sheet.autoResizeColumn(2); // Name column
+    sheet.setColumnWidth(3, 300); // Subject column
+    sheet.setColumnWidth(4, 500); // Body column (wider for content)
+    sheet.setColumnWidth(5, 20);  // Empty separator column
+    sheet.setColumnWidth(6, 150); // Variables column
+    sheet.setColumnWidth(7, 300); // Instructions column
+    
+    // Style the variables and instructions columns
+    sheet.getRange(1, 6, 1, 2).setBackground("#e8f0fe").setFontColor("#1a73e8"); // Header style
+    sheet.getRange(2, 6, defaultTemplates.length, 1).setBackground("#f8f9fa").setFontFamily("Courier New");
+    sheet.getRange(2, 7, defaultTemplates.length, 1).setBackground("#fff8e1").setFontStyle("italic");
+    
+    // Set word wrap for body and instructions
+    sheet.getRange(2, 4, defaultTemplates.length, 1).setWrap(true);
+    sheet.getRange(2, 7, defaultTemplates.length, 1).setWrap(true);
+    
+    logAction("Sequence Creation", "Created default NBS sequence sheet: " + sequenceName);
+    return true;
+    
+  } catch (error) {
+    console.error("Error creating default NBS sequence sheet: " + error);
+    logAction("Error", "Failed to create default NBS sequence: " + sequenceName + " - " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Sets up the Templates sheet with default templates (legacy - kept for backwards compatibility)
  */
 function setupTemplatesSheet(sheet) {
   // Set headers - Sequence, Template Name, Subject, Body
@@ -696,12 +817,12 @@ function addDemoContactsIfNeeded() {
     }
     
     // Single demo contact at Step 1, ready to send immediately
-    // Uses SaaS / B2B Tech sequence which is created by default
+    // Uses New Business Sequence which is created by default
     const demoContact = [
       "Demo", "Contact", "demo@example.com", "Example Company", "Manager",
       1, "", "", "Active", "Try sending an email to this demo contact! Delete when done.",
       "", "", "No", "No", "Medium", "demo",
-      "SaaS / B2B Tech", "SaaS / B2B Tech", "", "", "", "", "No",
+      "New Business Sequence", "SaaS / B2B Tech", "", "", "", "", "No",
       "No", ""  // Reply Received, Reply Date
     ];
     

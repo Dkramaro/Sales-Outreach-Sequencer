@@ -177,7 +177,7 @@ function buildSelectContactsCard(e) {
     const userProps = PropertiesService.getUserProperties();
     const autoSendStep1Enabled = userProps.getProperty("AUTO_SEND_STEP_1_ENABLED") === 'true';
 
-    const statusFilter = e.parameters.statusFilter || 'all'; 
+    const statusFilter = e.parameters.statusFilter || 'ready'; 
     const sequenceFilter = e.parameters.sequenceFilter || ""; 
 
     const card = CardService.newCardBuilder();
@@ -241,9 +241,8 @@ function buildSelectContactsCard(e) {
         // Select all checkbox
         contactsSection.addWidget(CardService.newSelectionInput()
             .setType(CardService.SelectionInputType.CHECK_BOX)
-            .setTitle("☑️ Select/Deselect All")
             .setFieldName("select_all")
-            .addItem("Select All on This Page", "select_all_value", isSelectAll)
+            .addItem("Select/Deselect All", "select_all_value", isSelectAll)
             .setOnChangeAction(CardService.newAction()
                 .setFunctionName("handleSelectAllGeneric")
                 .setParameters({ step: step.toString(), page: page.toString() }))
@@ -289,7 +288,8 @@ function buildSelectContactsCard(e) {
                     sequenceFilter: sequenceFilter,
                     statusFilter: statusFilter
                 })));
-        if (step < CONFIG.SEQUENCE_STEPS) { 
+        // Only show advancement button for steps 3, 4, 5 (not step 1)
+        if (step > 1 && step < CONFIG.SEQUENCE_STEPS) { 
             actionButtonSet.addButton(CardService.newTextButton()
                 .setText("→ Step " + (step + 1))
                 .setOnClickAction(CardService.newAction()
@@ -327,7 +327,7 @@ function viewStep2Contacts(e) {
     const isSelectAll = (e?.parameters?.selectAll === 'true');
     const pageSize = 10;
 
-    const statusFilter = e.parameters.statusFilter || 'all'; 
+    const statusFilter = e.parameters.statusFilter || 'ready'; 
     const sequenceFilter = e.parameters.sequenceFilter || ""; 
 
     const card = CardService.newCardBuilder();
@@ -387,9 +387,8 @@ function viewStep2Contacts(e) {
         // Select all checkbox
         contactsSection.addWidget(CardService.newSelectionInput()
             .setType(CardService.SelectionInputType.CHECK_BOX)
-            .setTitle("☑️ Select/Deselect All")
             .setFieldName("select_all")
-            .addItem("Select All on This Page", "select_all_value", isSelectAll)
+            .addItem("Select/Deselect All", "select_all_value", isSelectAll)
             .setOnChangeAction(CardService.newAction()
                 .setFunctionName("handleSelectAllGeneric") 
                 .setParameters({ step: step.toString(), page: page.toString() }))
@@ -488,7 +487,6 @@ function viewContactsReadyForEmail(e) {
 
       contactsSection.addWidget(CardService.newSelectionInput()
           .setType(CardService.SelectionInputType.CHECK_BOX)
-          .setTitle("Select/Deselect All on This Page")
           .setFieldName("select_all") 
           .addItem("Select/Deselect All", "select_all_value", isSelectAll)
           .setOnChangeAction(CardService.newAction()
@@ -506,24 +504,30 @@ function viewContactsReadyForEmail(e) {
      const buttonText = autoSendStep1Enabled ? "PROCESS EMAILS (AUTO-SENDS STEP 1)" : "SEND ALL AS DRAFT";
      // --- END MODIFICATION ---
 
-     contactsSection.addWidget(CardService.newButtonSet()
-         .addButton(CardService.newTextButton()
-             .setText(buttonText) // Use the dynamic text
-             .setOnClickAction(CardService.newAction()
-                 .setFunctionName("emailSelectedContacts") 
-                       .setParameters({ page: page.toString() }))));
+    contactsSection.addWidget(CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+            .setText(buttonText) // Use the dynamic text
+            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+            .setBackgroundColor("#1a73e8")
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("emailSelectedContacts") 
+                      .setParameters({ page: page.toString() }))));
 
      addPaginationButtons(contactsSection, page, totalPages, "viewContactsReadyForEmail", {});
    }
 
    card.addSection(contactsSection);
 
-   const navSection = CardService.newCardSection();
-   navSection.addWidget(CardService.newTextButton()
-       .setText("Back to Sequence Management")
-       .setOnClickAction(CardService.newAction()
-           .setFunctionName("buildSequenceManagementCard")));
-   card.addSection(navSection);
+   // Only show navigation during wizard if user has completed onboarding
+   const wizardCompleted = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
+   if (wizardCompleted) {
+     const navSection = CardService.newCardSection();
+     navSection.addWidget(CardService.newTextButton()
+         .setText("Back to Sequence Management")
+         .setOnClickAction(CardService.newAction()
+             .setFunctionName("buildSequenceManagementCard")));
+     card.addSection(navSection);
+   }
 
    return card.build();
 }
