@@ -1,0 +1,60 @@
+{
+    "timeZone": "America/Toronto",
+    "dependencies": {
+      "enabledAdvancedServices": [
+        {
+          "userSymbol": "Gmail",
+          "serviceId": "gmail",
+          "version": "v1"
+        },
+        {
+          "userSymbol": "Drive",
+          "version": "v3",
+          "serviceId": "drive"
+        }
+      ]
+    },
+    "oauthScopes": [
+      "https://www.googleapis.com/auth/gmail.addons.execute",
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/script.external_request",
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/gmail.compose",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
+      "https://www.googleapis.com/auth/gmail.addons.current.message.metadata",
+      "https://www.googleapis.com/auth/script.send_mail",
+      "https://www.googleapis.com/auth/script.storage",
+      "https://www.googleapis.com/auth/script.scriptapp",
+      "https://www.googleapis.com/auth/drive.readonly",
+      "https://www.googleapis.com/auth/spreadsheets"
+    ],
+    "gmail": {
+      "name": "SOS with Draft Emails",
+      "logoUrl": "https://www.gstatic.com/images/branding/product/2x/gmail_48dp.png",
+      "primaryColor": "#4285F4",
+      "secondaryColor": "#4285F4",
+      "authorizationCheckFunction": "checkGmailAuthorization",
+      "contextualTriggers": [
+        {
+          "unconditional": {},
+          "onTriggerFunction": "getContextualAddOn"
+        }
+      ],
+      "composeTrigger": {
+        "selectActions": [
+          {
+            "text": "Insert Template",
+            "runFunction": "selectEmailTemplate"
+          }
+        ],
+        "draftAccess": "METADATA"
+      },
+      "homepageTrigger": {
+        "runFunction": "onOpen"
+      }
+    },
+    "exceptionLogging": "STACKDRIVER",
+    "runtimeVersion": "V8"
+  }
