@@ -8,6 +8,8 @@
  * KEY FUNCTIONS:
  * - buildSettingsCard() - Settings UI with all configuration options
  * - saveSettings() - Persist user settings
+ * - autoSaveSignatureToggle() - Auto-save when signature toggle changes
+ * - autoSaveAutoSendToggle() - Auto-save when auto-send toggle changes
  * 
  * NOTE: Today's Sent Emails reporting has been moved to 18_Analytics.gs
  * 
@@ -18,274 +20,293 @@
  * - 06_SequenceData.gs: getAvailableSequences
  * - 17_Utilities.gs: extractIdFromUrl
  * 
- * @version 2.4
+ * @version 2.7 - Consolidated UI, auto-save toggles, sticky save footer
  */
 
 /* ======================== SETTINGS UI ======================== */
 
 /**
-* Builds the complete Settings card, including the button to trigger the batch labeling process.
+* Builds the complete Settings card with consolidated sections for better UX.
+* Sections: Identity, Email Behavior, Attachments & Filters, System
+* Fixed Footer: Sticky Save button always visible at bottom
 */
 function buildSettingsCard() {
- const card = CardService.newCardBuilder();
+  const card = CardService.newCardBuilder();
+  const userProps = PropertiesService.getUserProperties();
 
- card.setHeader(CardService.newCardHeader()
-     .setTitle("Settings")
-     .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/settings_black_48dp.png"));
+  card.setHeader(CardService.newCardHeader()
+      .setTitle("Settings")
+      .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/settings_black_48dp.png"));
 
- const userProps = PropertiesService.getUserProperties();
+  // ═══════════════════════════════════════════════════════════════════
+  // SECTION 1: YOUR EMAIL IDENTITY
+  // ═══════════════════════════════════════════════════════════════════
+  const identitySection = CardService.newCardSection()
+      .setHeader("📧 Your Email Identity");
 
- // --- Email Sending Behavior Section ---
- const sendingBehaviorSection = CardService.newCardSection()
-     .setHeader("Email Sending Behavior");
- 
- const isAutoSendStep1Enabled = userProps.getProperty("AUTO_SEND_STEP_1_ENABLED") === 'true';
- sendingBehaviorSection.addWidget(CardService.newSelectionInput()
-     .setType(CardService.SelectionInputType.SWITCH)
-     .setTitle("Enable Auto-Sending for Step 1")
-     .setFieldName("autoSendStep1Emails")
-     .addItem("When enabled, ONLY Step 1 emails are sent immediately. All other steps (2-5) remain as drafts.", "true", isAutoSendStep1Enabled));
- card.addSection(sendingBehaviorSection);
+  // Sender info fields
+  const senderName = userProps.getProperty("SENDER_NAME") || 
+      (Session.getActiveUser() ? Session.getActiveUser().getEmail().split('@')[0] : "");
+  const senderCompany = userProps.getProperty("SENDER_COMPANY") || "";
+  const senderTitle = userProps.getProperty("SENDER_TITLE") || "";
 
- // --- Sequence Settings Section ---
- const sequenceSection = CardService.newCardSection()
-     .setHeader("Sequence Settings");
- const delayDays = userProps.getProperty("DELAY_DAYS") || CONFIG.DEFAULT_DELAY_DAYS.toString();
- sequenceSection.addWidget(CardService.newTextInput()
-     .setFieldName("delayDays")
-     .setTitle("Days Between Sequence Emails")
-     .setHint(`Default: ${CONFIG.DEFAULT_DELAY_DAYS}`)
-     .setValue(delayDays));
- card.addSection(sequenceSection);
+  identitySection.addWidget(CardService.newTextInput()
+      .setFieldName("senderName")
+      .setTitle("Your Name")
+      .setHint("Used for {{senderName}} in templates")
+      .setValue(senderName));
+  identitySection.addWidget(CardService.newTextInput()
+      .setFieldName("senderCompany")
+      .setTitle("Your Company")
+      .setHint("Used for {{senderCompany}} in templates")
+      .setValue(senderCompany));
+  identitySection.addWidget(CardService.newTextInput()
+      .setFieldName("senderTitle")
+      .setTitle("Your Title")
+      .setHint("Used for {{senderTitle}} in templates")
+      .setValue(senderTitle));
 
- // --- Sender Information Section ---
- const senderSection = CardService.newCardSection()
-     .setHeader("Sender Info (for Template Placeholders)");
- const senderName = userProps.getProperty("SENDER_NAME") || (Session.getActiveUser() ? Session.getActiveUser().getEmail().split('@')[0] : "");
- const senderCompany = userProps.getProperty("SENDER_COMPANY") || "";
- const senderTitle = userProps.getProperty("SENDER_TITLE") || "";
- senderSection.addWidget(CardService.newTextInput()
-     .setFieldName("senderName").setTitle("Your Name (for {{senderName}})")
-     .setValue(senderName).setHint("e.g., John Doe"));
- senderSection.addWidget(CardService.newTextInput()
-     .setFieldName("senderCompany").setTitle("Your Company (for {{senderCompany}})")
-     .setValue(senderCompany).setHint("e.g., ACME Corp"));
- senderSection.addWidget(CardService.newTextInput()
-     .setFieldName("senderTitle").setTitle("Your Title (for {{senderTitle}})")
-     .setValue(senderTitle).setHint("e.g., Sales Manager"));
- card.addSection(senderSection);
+  // Divider before signature
+  identitySection.addWidget(CardService.newDivider());
 
- // --- Email CC Section ---
- const ccSection = CardService.newCardSection()
-     .setHeader("Email CC Settings");
- const ccEmails = userProps.getProperty("CC_EMAILS") || "";
- ccSection.addWidget(CardService.newTextInput()
-     .setFieldName("ccEmails")
-     .setTitle("Emails to CC")
-     .setHint("Comma-separated email addresses")
-     .setValue(ccEmails));
- card.addSection(ccSection);
- 
-// --- Signature From Google Doc Section ---
-const signatureSection = CardService.newCardSection()
-    .setHeader("Email Signature from Google Doc");
-const signatureDocId = userProps.getProperty("SIGNATURE_DOC_ID") || "";
-const signatureEnabled = userProps.getProperty("SIGNATURE_ENABLED") === 'true';
+  // Signature section (conditional)
+  const signatureDocId = userProps.getProperty("SIGNATURE_DOC_ID") || "";
+  const signatureEnabled = userProps.getProperty("SIGNATURE_ENABLED") === 'true';
 
-if (!signatureDocId) {
-    // First-time setup: Show setup button
-    signatureSection.addWidget(CardService.newTextParagraph()
-        .setText("Create a Google Doc for your email signature. The doc will have 0 margins for perfect email formatting."));
-    signatureSection.addWidget(CardService.newButtonSet()
-        .addButton(CardService.newTextButton()
-            .setText("📝 Setup Signature")
-            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-            .setOnClickAction(CardService.newAction()
-                .setFunctionName("createSignatureDoc"))));
-} else {
-    // Signature exists: Show view button and toggle
-    try {
-        const sigDoc = DriveApp.getFileById(signatureDocId);
-        signatureSection.addWidget(CardService.newKeyValue()
-            .setTopLabel("Signature Document")
-            .setContent(sigDoc.getName())
-            .setOpenLink(CardService.newOpenLink()
-                .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")));
-    } catch(e) {
-        signatureSection.addWidget(CardService.newTextParagraph()
-            .setText("⚠️ Error accessing signature document. It may have been deleted."));
-    }
-    
-    signatureSection.addWidget(CardService.newButtonSet()
-        .addButton(CardService.newTextButton()
-            .setText("👁️ View Signature")
-            .setOpenLink(CardService.newOpenLink()
-                .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")))
-        .addButton(CardService.newTextButton()
-            .setText("🔄 Create New Signature")
-            .setOnClickAction(CardService.newAction()
-                .setFunctionName("createSignatureDoc"))));
-    
-    // Toggle to enable/disable signature
-    signatureSection.addWidget(CardService.newSelectionInput()
-        .setType(CardService.SelectionInputType.SWITCH)
-        .setTitle("Include Signature in Emails")
-        .setFieldName("signatureEnabled")
-        .addItem("Automatically append signature to all emails", "true", signatureEnabled));
-}
-card.addSection(signatureSection);
-
- // --- Step 2 PDF Attachment Section ---
- const attachmentSection = CardService.newCardSection()
-    .setHeader("Step 2 PDF Attachment");
-
- const pdfFileId = userProps.getProperty("PDF_ATTACHMENT_FILE_ID") || "";
- const sequencesForPdfString = userProps.getProperty("SEQUENCES_FOR_PDF") || "";
- const sequencesForPdf = sequencesForPdfString ? sequencesForPdfString.split(',') : [];
-
- attachmentSection.addWidget(CardService.newTextParagraph()
-    .setText("To automatically attach a PDF to Step 2 emails, paste its Google Drive share link below."));
-
- attachmentSection.addWidget(CardService.newTextInput()
-    .setFieldName("pdfAttachmentUrlOrId")
-    .setTitle("Google Drive Link or File ID for PDF")
-    .setHint("e.g., 1mSlH2WJUr0jSZKyfySk44oG8nphZYs3g")
-    .setValue(pdfFileId));
-
- if (pdfFileId) {
-    try {
-        const fileName = DriveApp.getFileById(pdfFileId).getName();
-        attachmentSection.addWidget(CardService.newKeyValue()
-            .setTopLabel("✅ Currently Saved File")
-            .setContent(fileName)
-            .setBottomLabel("To remove, clear the field above and save."));
-    } catch(e) {
-        attachmentSection.addWidget(CardService.newKeyValue()
-            .setTopLabel("⚠️ Currently Saved File")
-            .setContent("Error: Could not access file.")
-            .setBottomLabel("ID: " + pdfFileId));
-    }
- }
-
- attachmentSection.addWidget(CardService.newTextParagraph()
-     .setText("Select which sequences should get this attachment:"));
- 
- const availableSequences = getAvailableSequences();
- if (availableSequences.length > 0) {
-     for (const sequenceName of availableSequences) {
-         const fieldName = "sequence_for_pdf_" + sequenceName.replace(/[^a-zA-Z0-9]/g, "_");
-         attachmentSection.addWidget(CardService.newSelectionInput()
-             .setType(CardService.SelectionInputType.CHECK_BOX)
-             .setFieldName(fieldName)
-             .addItem(sequenceName, sequenceName, sequencesForPdf.includes(sequenceName))
-         );
-     }
- } else {
-     attachmentSection.addWidget(CardService.newTextParagraph().setText("No sequences found. Create a sequence first."));
- }
- card.addSection(attachmentSection);
-
- // --- Priority Filter Section ---
- const priorityFilterSection = CardService.newCardSection()
-    .setHeader("Contact Priority Filters (Select all that apply)");
- const priorityFiltersString = userProps.getProperty("PRIORITY_FILTERS");
- let initiallySelectedPriorities = [];
- if (priorityFiltersString === null || priorityFiltersString === undefined || priorityFiltersString === "") {
-    initiallySelectedPriorities = ["High", "Medium", "Low"];
- } else {
-    initiallySelectedPriorities = priorityFiltersString.split(',').map(p => p.trim());
- }
- priorityFilterSection.addWidget(CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setTitle("High Priority 🔥")
-    .setFieldName("priorityFilter_High")
-    .addItem("Include High Priority", "High", initiallySelectedPriorities.includes("High")));
- priorityFilterSection.addWidget(CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setTitle("Medium Priority 🟠")
-    .setFieldName("priorityFilter_Medium")
-    .addItem("Include Medium Priority", "Medium", initiallySelectedPriorities.includes("Medium")));
- priorityFilterSection.addWidget(CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setTitle("Low Priority ⚪")
-    .setFieldName("priorityFilter_Low")
-    .addItem("Include Low Priority", "Low", initiallySelectedPriorities.includes("Low")));
- card.addSection(priorityFilterSection);
-
- // --- Save Button Section ---
- const buttonSection = CardService.newCardSection();
- buttonSection.addWidget(CardService.newButtonSet()
-     .addButton(CardService.newTextButton()
-         .setText("Save Settings")
-         .setOnClickAction(CardService.newAction()
-             .setFunctionName("saveSettings"))));
- card.addSection(buttonSection);
-
- // --- Manual Actions Section ---
- const actionsSection = CardService.newCardSection()
-     .setHeader("Manual Actions");
- actionsSection.addWidget(CardService.newTextParagraph()
-     .setText("Run background tasks on your entire database. This may take some time to complete."));
- actionsSection.addWidget(CardService.newButtonSet()
-     .addButton(CardService.newTextButton()
-         .setText("Find & Label Sent Emails")
-         .setOnClickAction(CardService.newAction()
-             .setFunctionName("startLabelingProcess"))));
- card.addSection(actionsSection);
-
-// --- Database Section ---
-const databaseSection = CardService.newCardSection()
-    .setHeader("Database Connection");
-const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
- if (spreadsheetId) {
-     try {
-         const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-         // Get the Contacts sheet gid to open directly to that tab
-         const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
-         const contactsSheetGid = contactsSheet ? contactsSheet.getSheetId() : 0;
-         databaseSection.addWidget(CardService.newKeyValue()
-              .setTopLabel("Connected Spreadsheet")
-              .setContent(spreadsheet.getName())
-              .setBottomLabel(`ID: ${spreadsheetId}`)
+  if (!signatureDocId) {
+      // No signature set up yet
+      identitySection.addWidget(CardService.newDecoratedText()
+          .setText("No email signature configured")
+          .setBottomLabel("Create a Google Doc with your signature"));
+      identitySection.addWidget(CardService.newButtonSet()
+          .addButton(CardService.newTextButton()
+              .setText("📝 Setup Signature")
+              .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+              .setOnClickAction(CardService.newAction()
+                  .setFunctionName("createSignatureDoc"))));
+  } else {
+      // Signature exists
+      try {
+          const sigDoc = DriveApp.getFileById(signatureDocId);
+          identitySection.addWidget(CardService.newDecoratedText()
+              .setTopLabel("Email Signature")
+              .setText(sigDoc.getName())
+              .setWrapText(true)
               .setOpenLink(CardService.newOpenLink()
-                   .setUrl("https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/edit#gid=" + contactsSheetGid)));
-         
-         // Disconnect button
-         databaseSection.addWidget(CardService.newButtonSet()
-             .addButton(CardService.newTextButton()
-                 .setText("🔌 Disconnect Database")
-                 .setOnClickAction(CardService.newAction()
-                     .setFunctionName("showDisconnectConfirmation"))));
-     } catch (error) {
-         databaseSection.addWidget(CardService.newTextParagraph()
-              .setText(`⚠️ Error accessing connected spreadsheet (ID: ${spreadsheetId}).`));
-         databaseSection.addWidget(CardService.newButtonSet()
-             .addButton(CardService.newTextButton()
-                 .setText("🔌 Disconnect & Reconnect")
-                 .setOnClickAction(CardService.newAction()
-                     .setFunctionName("disconnectDatabase"))));
-     }
- } else {
-     databaseSection.addWidget(CardService.newTextParagraph()
-         .setText("No database currently connected."));
-     databaseSection.addWidget(CardService.newButtonSet()
-         .addButton(CardService.newTextButton()
-             .setText("🔗 Connect Database")
-             .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-             .setOnClickAction(CardService.newAction()
-                 .setFunctionName("showConnectDatabaseForm"))));
- }
-card.addSection(databaseSection);
+                  .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")));
+      } catch(e) {
+          identitySection.addWidget(CardService.newDecoratedText()
+              .setText("⚠️ Signature document not accessible")
+              .setBottomLabel("It may have been deleted"));
+      }
+      
+      identitySection.addWidget(CardService.newButtonSet()
+          .addButton(CardService.newTextButton()
+              .setText("👁️ View")
+              .setOpenLink(CardService.newOpenLink()
+                  .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")))
+          .addButton(CardService.newTextButton()
+              .setText("🔄 New")
+              .setOnClickAction(CardService.newAction()
+                  .setFunctionName("createSignatureDoc"))));
+      
+      identitySection.addWidget(CardService.newSelectionInput()
+          .setType(CardService.SelectionInputType.SWITCH)
+          .setTitle("Append Signature to Emails")
+          .setFieldName("signatureEnabled")
+          .addItem("Automatically add signature to all outgoing emails", "true", signatureEnabled)
+          .setOnChangeAction(CardService.newAction()
+              .setFunctionName("autoSaveSignatureToggle")));
+  }
+  card.addSection(identitySection);
 
- // --- Navigation Section ---
- const navSection = CardService.newCardSection();
- navSection.addWidget(CardService.newTextButton()
-     .setText("Back to Main Menu")
-     .setOnClickAction(CardService.newAction()
-         .setFunctionName("buildAddOn")));
- card.addSection(navSection);
+  // ═══════════════════════════════════════════════════════════════════
+  // SECTION 2: EMAIL BEHAVIOR
+  // ═══════════════════════════════════════════════════════════════════
+  const behaviorSection = CardService.newCardSection()
+      .setHeader("⚙️ Email Behavior");
 
- return card.build();
+  // Auto-send toggle (auto-saves on change)
+  const isAutoSendStep1Enabled = userProps.getProperty("AUTO_SEND_STEP_1_ENABLED") === 'true';
+  behaviorSection.addWidget(CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.SWITCH)
+      .setTitle("Auto-Send Step 1 Emails")
+      .setFieldName("autoSendStep1Emails")
+      .addItem("Send Step 1 immediately; Steps 2-5 remain as drafts", "true", isAutoSendStep1Enabled)
+      .setOnChangeAction(CardService.newAction()
+          .setFunctionName("autoSaveAutoSendToggle")));
+
+  // Delay days
+  const delayDays = userProps.getProperty("DELAY_DAYS") || CONFIG.DEFAULT_DELAY_DAYS.toString();
+  behaviorSection.addWidget(CardService.newTextInput()
+      .setFieldName("delayDays")
+      .setTitle("Days Between Sequence Steps")
+      .setHint("Default: " + CONFIG.DEFAULT_DELAY_DAYS)
+      .setValue(delayDays));
+
+  // CC emails
+  const ccEmails = userProps.getProperty("CC_EMAILS") || "";
+  behaviorSection.addWidget(CardService.newTextInput()
+      .setFieldName("ccEmails")
+      .setTitle("CC Recipients")
+      .setHint("Comma-separated email addresses")
+      .setValue(ccEmails));
+
+  card.addSection(behaviorSection);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SECTION 3: ATTACHMENTS & FILTERS
+  // ═══════════════════════════════════════════════════════════════════
+  const filtersSection = CardService.newCardSection()
+      .setHeader("📎 Attachments & Filters");
+
+  // PDF Attachment
+  const pdfFileId = userProps.getProperty("PDF_ATTACHMENT_FILE_ID") || "";
+  const sequencesForPdfString = userProps.getProperty("SEQUENCES_FOR_PDF") || "";
+  const sequencesForPdf = sequencesForPdfString ? sequencesForPdfString.split(',') : [];
+
+  filtersSection.addWidget(CardService.newTextInput()
+      .setFieldName("pdfAttachmentUrlOrId")
+      .setTitle("Step 2 PDF Attachment")
+      .setHint("Paste Google Drive link or file ID")
+      .setValue(pdfFileId));
+
+  // Show current file status if PDF is configured
+  if (pdfFileId) {
+      try {
+          const fileName = DriveApp.getFileById(pdfFileId).getName();
+          filtersSection.addWidget(CardService.newDecoratedText()
+              .setTopLabel("✅ Attached File")
+              .setText(fileName)
+              .setBottomLabel("Clear field above to remove"));
+      } catch(e) {
+          filtersSection.addWidget(CardService.newDecoratedText()
+              .setTopLabel("⚠️ File Error")
+              .setText("Could not access file")
+              .setBottomLabel("ID: " + pdfFileId));
+      }
+  }
+
+  // Sequence selection for PDF - SINGLE widget with multiple items
+  const availableSequences = getAvailableSequences();
+  if (availableSequences.length > 0) {
+      const sequenceSelector = CardService.newSelectionInput()
+          .setType(CardService.SelectionInputType.CHECK_BOX)
+          .setTitle("Attach PDF to Sequences")
+          .setFieldName("sequencesForPdf");
+      
+      for (const seq of availableSequences) {
+          sequenceSelector.addItem(seq, seq, sequencesForPdf.includes(seq));
+      }
+      filtersSection.addWidget(sequenceSelector);
+  } else {
+      filtersSection.addWidget(CardService.newDecoratedText()
+          .setText("No sequences available")
+          .setBottomLabel("Create a sequence first to attach PDFs"));
+  }
+
+  // Divider before priority filters
+  filtersSection.addWidget(CardService.newDivider());
+
+  // Priority filters - SINGLE widget with 3 items
+  const priorityFiltersString = userProps.getProperty("PRIORITY_FILTERS");
+  let initiallySelectedPriorities = [];
+  if (priorityFiltersString === null || priorityFiltersString === undefined || priorityFiltersString === "") {
+      initiallySelectedPriorities = ["High", "Medium", "Low"];
+  } else {
+      initiallySelectedPriorities = priorityFiltersString.split(',').map(p => p.trim());
+  }
+
+  filtersSection.addWidget(CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.CHECK_BOX)
+      .setTitle("Show Contacts by Priority")
+      .setFieldName("priorityFilters")
+      .addItem("🔥 High Priority", "High", initiallySelectedPriorities.includes("High"))
+      .addItem("🟠 Medium Priority", "Medium", initiallySelectedPriorities.includes("Medium"))
+      .addItem("⚪ Low Priority", "Low", initiallySelectedPriorities.includes("Low")));
+
+  card.addSection(filtersSection);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SECTION 4: SYSTEM & ACTIONS
+  // ═══════════════════════════════════════════════════════════════════
+  const systemSection = CardService.newCardSection()
+      .setHeader("🔧 System");
+
+  // Database connection status
+  const spreadsheetId = userProps.getProperty("SPREADSHEET_ID");
+  if (spreadsheetId) {
+      try {
+          const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+          const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
+          const contactsSheetGid = contactsSheet ? contactsSheet.getSheetId() : 0;
+          
+          systemSection.addWidget(CardService.newDecoratedText()
+              .setTopLabel("✅ Database Connected")
+              .setText(spreadsheet.getName())
+              .setWrapText(true)
+              .setOpenLink(CardService.newOpenLink()
+                  .setUrl("https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/edit#gid=" + contactsSheetGid)));
+          
+          systemSection.addWidget(CardService.newButtonSet()
+              .addButton(CardService.newTextButton()
+                  .setText("🔌 Disconnect")
+                  .setOnClickAction(CardService.newAction()
+                      .setFunctionName("showDisconnectConfirmation"))));
+      } catch (error) {
+          systemSection.addWidget(CardService.newDecoratedText()
+              .setTopLabel("⚠️ Database Error")
+              .setText("Cannot access spreadsheet")
+              .setBottomLabel("ID: " + spreadsheetId));
+          systemSection.addWidget(CardService.newButtonSet()
+              .addButton(CardService.newTextButton()
+                  .setText("🔌 Disconnect & Reconnect")
+                  .setOnClickAction(CardService.newAction()
+                      .setFunctionName("disconnectDatabase"))));
+      }
+  } else {
+      systemSection.addWidget(CardService.newDecoratedText()
+          .setText("No database connected")
+          .setBottomLabel("Connect a Google Sheet to get started"));
+      systemSection.addWidget(CardService.newButtonSet()
+          .addButton(CardService.newTextButton()
+              .setText("🔗 Connect Database")
+              .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+              .setOnClickAction(CardService.newAction()
+                  .setFunctionName("showConnectDatabaseForm"))));
+  }
+
+  // Divider before manual actions
+  systemSection.addWidget(CardService.newDivider());
+
+  // Manual labeling action
+  systemSection.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+          .setText("🏷️ Find & Label Sent Emails")
+          .setOnClickAction(CardService.newAction()
+              .setFunctionName("startLabelingProcess"))));
+
+  // Back navigation
+  systemSection.addWidget(CardService.newDivider());
+  systemSection.addWidget(CardService.newTextButton()
+      .setText("← Back to Main Menu")
+      .setOnClickAction(CardService.newAction()
+          .setFunctionName("buildAddOn")));
+
+  card.addSection(systemSection);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FIXED FOOTER: Save button (always visible, sticky at bottom)
+  // ═══════════════════════════════════════════════════════════════════
+  const fixedFooter = CardService.newFixedFooter()
+      .setPrimaryButton(CardService.newTextButton()
+          .setText("💾 Save")
+          .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+          .setOnClickAction(CardService.newAction()
+              .setFunctionName("saveSettings")));
+  card.setFixedFooter(fixedFooter);
+
+  return card.build();
 }
 
 /* ======================== SIGNATURE DOCUMENT SETUP ======================== */
@@ -424,78 +445,136 @@ function createSignatureDoc() {
 /* ======================== SAVE SETTINGS ======================== */
 
 /**
+* Auto-saves the Signature toggle when changed.
+* Provides instant feedback without requiring manual save.
+*/
+function autoSaveSignatureToggle(e) {
+  const formInput = e.formInput || {};
+  const signatureEnabled = formInput.signatureEnabled === "true";
+  
+  const userProps = PropertiesService.getUserProperties();
+  userProps.setProperty("SIGNATURE_ENABLED", signatureEnabled.toString());
+  
+  const statusText = signatureEnabled ? "ON" : "OFF";
+  logAction("Toggle Setting", `Signature: ${statusText}`);
+  
+  return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification()
+          .setText(`✓ Signature ${statusText}`))
+      .build();
+}
+
+/**
+* Auto-saves the Auto-Send Step 1 toggle when changed.
+* Provides instant feedback without requiring manual save.
+*/
+function autoSaveAutoSendToggle(e) {
+  const formInput = e.formInput || {};
+  const autoSendEnabled = formInput.autoSendStep1Emails === "true";
+  
+  const userProps = PropertiesService.getUserProperties();
+  userProps.setProperty("AUTO_SEND_STEP_1_ENABLED", autoSendEnabled.toString());
+  
+  const statusText = autoSendEnabled ? "ON" : "OFF";
+  logAction("Toggle Setting", `Auto-Send Step 1: ${statusText}`);
+  
+  return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification()
+          .setText(`✓ Auto-Send Step 1 ${statusText}`))
+      .build();
+}
+
+/**
 * Saves settings from the Settings card.
+* Handles consolidated field names from the redesigned UI.
 */
 function saveSettings(e) {
-const delayDaysInput = e.formInput.delayDays;
-const senderName = e.formInput.senderName || "";
-const senderCompany = e.formInput.senderCompany || "";
-const senderTitle = e.formInput.senderTitle || "";
-const ccEmails = e.formInput.ccEmails || "";
-const pdfUrlOrId = e.formInput.pdfAttachmentUrlOrId || "";
-const signatureEnabled = e.formInput.signatureEnabled === "true";
-const autoSendStep1Enabled = e.formInput.autoSendStep1Emails === "true";
+  const formInput = e.formInput || {};
+  
+  // Extract form values with defaults
+  const delayDaysInput = formInput.delayDays;
+  const senderName = formInput.senderName || "";
+  const senderCompany = formInput.senderCompany || "";
+  const senderTitle = formInput.senderTitle || "";
+  const ccEmails = formInput.ccEmails || "";
+  const pdfUrlOrId = formInput.pdfAttachmentUrlOrId || "";
+  const signatureEnabled = formInput.signatureEnabled === "true";
+  const autoSendStep1Enabled = formInput.autoSendStep1Emails === "true";
 
- const selectedSequencesForPdf = [];
- for (const key in e.formInput) {
-    if (key.startsWith("sequence_for_pdf_")) {
-        selectedSequencesForPdf.push(e.formInput[key]);
-    }
- }
+  // Handle sequences for PDF - now a single field that returns array or string
+  let selectedSequencesForPdf = [];
+  if (formInput.sequencesForPdf) {
+      // Can be array (multiple selected) or string (single selected)
+      if (Array.isArray(formInput.sequencesForPdf)) {
+          selectedSequencesForPdf = formInput.sequencesForPdf;
+      } else {
+          selectedSequencesForPdf = [formInput.sequencesForPdf];
+      }
+  }
 
- const collectedPriorities = [];
- if (e.formInput.priorityFilter_High) { collectedPriorities.push("High"); }
- if (e.formInput.priorityFilter_Medium) { collectedPriorities.push("Medium"); }
- if (e.formInput.priorityFilter_Low) { collectedPriorities.push("Low"); }
+  // Handle priority filters - now a single field that returns array or string
+  let collectedPriorities = [];
+  if (formInput.priorityFilters) {
+      // Can be array (multiple selected) or string (single selected)
+      if (Array.isArray(formInput.priorityFilters)) {
+          collectedPriorities = formInput.priorityFilters;
+      } else {
+          collectedPriorities = [formInput.priorityFilters];
+      }
+  }
  
- const delayDays = parseInt(delayDaysInput);
- if (isNaN(delayDays) || delayDays < 0) {
-   return createNotification("Please enter a valid, non-negative number of days.");
- }
+  // Validate delay days
+  const delayDays = parseInt(delayDaysInput);
+  if (isNaN(delayDays) || delayDays < 0) {
+      return createNotification("Please enter a valid, non-negative number of days.");
+  }
 
- const pdfFileId = extractIdFromUrl(pdfUrlOrId);
- if (pdfUrlOrId && !pdfFileId) {
-     return createNotification("The provided PDF attachment link or ID is invalid.");
- }
- if (pdfFileId) {
-    try {
-        DriveApp.getFileById(pdfFileId).getName();
-    } catch(err) {
-        return createNotification("Error accessing the PDF file. Please check permissions.");
-    }
- }
+  // Validate PDF file if provided
+  const pdfFileId = extractIdFromUrl(pdfUrlOrId);
+  if (pdfUrlOrId && !pdfFileId) {
+      return createNotification("The provided PDF attachment link or ID is invalid.");
+  }
+  if (pdfFileId) {
+      try {
+          DriveApp.getFileById(pdfFileId).getName();
+      } catch(err) {
+          return createNotification("Error accessing the PDF file. Please check permissions.");
+      }
+  }
 
-const userProps = PropertiesService.getUserProperties();
-userProps.setProperty("DELAY_DAYS", delayDays.toString());
-userProps.setProperty("SENDER_NAME", senderName);
-userProps.setProperty("SENDER_COMPANY", senderCompany);
-userProps.setProperty("SENDER_TITLE", senderTitle);
-userProps.setProperty("CC_EMAILS", ccEmails);
-userProps.setProperty("PDF_ATTACHMENT_FILE_ID", pdfFileId || "");
-userProps.setProperty("SEQUENCES_FOR_PDF", selectedSequencesForPdf.join(','));
-userProps.setProperty("SIGNATURE_ENABLED", signatureEnabled.toString());
-userProps.setProperty("AUTO_SEND_STEP_1_ENABLED", autoSendStep1Enabled.toString());
+  // Persist all settings
+  const userProps = PropertiesService.getUserProperties();
+  userProps.setProperty("DELAY_DAYS", delayDays.toString());
+  userProps.setProperty("SENDER_NAME", senderName);
+  userProps.setProperty("SENDER_COMPANY", senderCompany);
+  userProps.setProperty("SENDER_TITLE", senderTitle);
+  userProps.setProperty("CC_EMAILS", ccEmails);
+  userProps.setProperty("PDF_ATTACHMENT_FILE_ID", pdfFileId || "");
+  userProps.setProperty("SEQUENCES_FOR_PDF", selectedSequencesForPdf.join(','));
+  userProps.setProperty("SIGNATURE_ENABLED", signatureEnabled.toString());
+  userProps.setProperty("AUTO_SEND_STEP_1_ENABLED", autoSendStep1Enabled.toString());
 
- if (collectedPriorities.length > 0) {
-  userProps.setProperty("PRIORITY_FILTERS", collectedPriorities.join(','));
- } else {
-  userProps.setProperty("PRIORITY_FILTERS", ""); 
- }
+  if (collectedPriorities.length > 0) {
+      userProps.setProperty("PRIORITY_FILTERS", collectedPriorities.join(','));
+  } else {
+      userProps.setProperty("PRIORITY_FILTERS", ""); 
+  }
 
-const priorityText = collectedPriorities.length > 0 ? collectedPriorities.join(',') : 'ALL';
-const ccText = ccEmails ? ccEmails : 'None';
-const pdfText = pdfFileId ? `PDF ID: ${pdfFileId}` : 'None';
-const pdfSeqText = selectedSequencesForPdf.length > 0 ? selectedSequencesForPdf.join(', ') : 'None';
-const sigText = signatureEnabled ? "Signature: ON" : "Signature: OFF";
-const autoSendText = autoSendStep1Enabled ? "Auto-Send Step 1: ON" : "Auto-Send Step 1: OFF";
+  // Log the action with summary
+  const priorityText = collectedPriorities.length > 0 ? collectedPriorities.join(',') : 'ALL';
+  const ccText = ccEmails ? ccEmails : 'None';
+  const pdfText = pdfFileId ? `PDF ID: ${pdfFileId}` : 'None';
+  const pdfSeqText = selectedSequencesForPdf.length > 0 ? selectedSequencesForPdf.join(', ') : 'None';
+  const sigText = signatureEnabled ? "Signature: ON" : "Signature: OFF";
+  const autoSendText = autoSendStep1Enabled ? "Auto-Send Step 1: ON" : "Auto-Send Step 1: OFF";
 
-logAction("Update Settings", `Saved: Delay=${delayDays}, Sender=${senderName}, Priorities=${priorityText}, CC=${ccText}, Attachment=${pdfText}, PDF Sequences=[${pdfSeqText}], ${sigText}, ${autoSendText}`);
+  logAction("Update Settings", `Saved: Delay=${delayDays}, Sender=${senderName}, Priorities=${priorityText}, CC=${ccText}, Attachment=${pdfText}, PDF Sequences=[${pdfSeqText}], ${sigText}, ${autoSendText}`);
  
- return CardService.newActionResponseBuilder()
-   .setNotification(CardService.newNotification().setText("Settings saved successfully!"))
-   .setNavigation(CardService.newNavigation()
-     .updateCard(buildAddOn()))
-   .build();
+  return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("Settings saved successfully!"))
+      .setNavigation(CardService.newNavigation()
+          .updateCard(buildAddOn()))
+      .build();
 }
 
 /* ======================== TODAY'S SENT EMAILS ======================== */

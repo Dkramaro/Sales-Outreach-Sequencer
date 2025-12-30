@@ -8,6 +8,8 @@
  * KEY FUNCTIONS:
  * - buildContactManagementCard() - Main contact management UI with pagination
  * - viewContactCard() - Detailed contact view and edit form
+ * - viewContactCardWithData() - Optimized contact view using pre-loaded data (for contextual trigger)
+ * - buildContactViewCard() - Shared implementation for contact view card
  * - searchContacts() - Contact search with pagination
  * - addContact() - Add new contact action handler
  * - saveAllContactChanges() - Save edits from contact view
@@ -132,30 +134,25 @@ function buildContactManagementCard(e) {
 
   card.addSection(formSection);
 
-  // Search section (collapsible to reduce clutter)
-  const searchSection = CardService.newCardSection()
-      .setHeader("🔍 Find a Contact")
-      .setCollapsible(true)
-      .setNumUncollapsibleWidgets(0);
+  // Search section - always visible, inline with button
+  const searchSection = CardService.newCardSection();
   
   searchSection.addWidget(CardService.newTextInput()
       .setFieldName("searchTerm")
-      .setTitle("Search")
+      .setTitle("🔍 Search Contacts")
       .setHint("Name, email, or company"));
   
   searchSection.addWidget(CardService.newButtonSet()
       .addButton(CardService.newTextButton()
           .setText("Search")
+          .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
           .setOnClickAction(CardService.newAction()
               .setFunctionName("searchContacts")
-               .setParameters({page: '1'}))));
+              .setParameters({page: '1'}))));
 
   card.addSection(searchSection);
 
   // --- Recent Contacts Section with Pagination ---
-  const recentSection = CardService.newCardSection()
-      .setHeader("📋 Your Contacts");
-
   const allContacts = getAllContactsData();
 
   // Sort by last email date (most recent first), handling potential null/invalid dates
@@ -169,64 +166,49 @@ function buildContactManagementCard(e) {
       return dateB - dateA; // Sort descending by time
   });
 
-
   const totalContacts = allContacts.length;
   const totalPages = Math.ceil(totalContacts / pageSize);
   const startIndex = (page - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalContacts);
   const contactsToShow = allContacts.slice(startIndex, endIndex);
 
+  // Header with count
+  const headerText = totalContacts > 0 
+      ? `📋 Your Contacts (${startIndex + 1}-${endIndex} of ${totalContacts})`
+      : "📋 Your Contacts";
+  const recentSection = CardService.newCardSection()
+      .setHeader(headerText);
+
   if (totalContacts === 0) {
     recentSection.addWidget(CardService.newTextParagraph()
         .setText("No contacts found. Add a contact to get started."));
   } else {
-    // Group contacts for display (optional, based on original code)
-    const groupedContacts = groupContactsByMarketingTitle(contactsToShow); // Group only the current page
-
-    // Display marketing contacts
-    if (groupedContacts.marketingContacts.length > 0) {
-      recentSection.addWidget(CardService.newTextParagraph()
-          .setText("📊 Marketing Contacts:"));
-      for (const contact of groupedContacts.marketingContacts) {
-        displayContactSummaryWidget(recentSection, contact); // Use helper
-         recentSection.addWidget(CardService.newDivider());
-      }
-       // Add a small spacer if both groups exist
-       if (groupedContacts.otherContacts.length > 0) {
-           recentSection.addWidget(CardService.newTextParagraph().setText(" ")); // Spacer
-       }
+    // Flat list - no Marketing/Other grouping, sorted by recency
+    for (const contact of contactsToShow) {
+      displayContactSummaryWidget(recentSection, contact);
+      recentSection.addWidget(CardService.newDivider());
     }
 
-     // Display other contacts
-     if (groupedContacts.otherContacts.length > 0) {
-       if (groupedContacts.marketingContacts.length > 0) { // Add header only if needed
-            recentSection.addWidget(CardService.newTextParagraph().setText("📋 Other Contacts:"));
-       }
-        for (const contact of groupedContacts.otherContacts) {
-            displayContactSummaryWidget(recentSection, contact); // Use helper
-            recentSection.addWidget(CardService.newDivider());
-        }
-     }
-
-     // Add Pagination Controls
-     addPaginationButtons(recentSection, page, totalPages, "buildContactManagementCard", {});
+    // Add Pagination Controls
+    addPaginationButtons(recentSection, page, totalPages, "buildContactManagementCard", {});
   }
 
   card.addSection(recentSection);
 
-  // Add navigation section (Back to Main Menu)
-  const navSection = CardService.newCardSection();
-  navSection.addWidget(CardService.newTextButton()
-      .setText("Back to Main Menu")
-      .setOnClickAction(CardService.newAction()
-          .setFunctionName("buildAddOn")));
-  card.addSection(navSection);
+  // Fixed footer navigation (persistent at bottom)
+  const fixedFooter = CardService.newFixedFooter()
+      .setPrimaryButton(CardService.newTextButton()
+          .setText("← Main Menu")
+          .setOnClickAction(CardService.newAction()
+              .setFunctionName("buildAddOn")));
+  card.setFixedFooter(fixedFooter);
 
   return card.build();
 }
 
 /**
  * Helper function to display a contact summary widget (used in recent/search)
+ * Shows recency indicator for when last email was sent
  */
 function displayContactSummaryWidget(section, contact) {
    let title = contact.firstName + " " + contact.lastName;
@@ -236,7 +218,19 @@ function displayContactSummaryWidget(section, contact) {
    else if (contact.priority === "Low") priorityIndicator = "⚪ ";
    title = priorityIndicator + title;
 
-   const bottomLabel = `${contact.company || 'N/A'} | ${contact.title || 'N/A'} | ${contact.sequence || 'N/A'}`;
+   // Build bottom label with recency indicator
+   let bottomParts = [];
+   if (contact.company) bottomParts.push(contact.company);
+   if (contact.title) bottomParts.push(contact.title);
+   if (contact.sequence) bottomParts.push(contact.sequence);
+   
+   // Add recency indicator
+   const recencyText = getRecencyText(contact.lastEmailDate);
+   if (recencyText) {
+     bottomParts.push("📅 " + recencyText);
+   }
+   
+   const bottomLabel = bottomParts.length > 0 ? bottomParts.join(" · ") : "No details";
 
    section.addWidget(CardService.newKeyValue()
        .setTopLabel(contact.email)
@@ -245,6 +239,37 @@ function displayContactSummaryWidget(section, contact) {
        .setOnClickAction(CardService.newAction()
            .setFunctionName("viewContactCard")
            .setParameters({ email: contact.email }))); // viewContactCard shows details, no page needed here
+}
+
+/**
+ * Returns a human-readable recency string for a date
+ * @param {Date} date The date to format
+ * @returns {string} Recency text like "Today", "Yesterday", "3 days ago", etc.
+ */
+function getRecencyText(date) {
+  if (!date || !(date instanceof Date) || isNaN(date)) {
+    return "Never emailed";
+  }
+  
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) {
+    return "Today";
+  } else if (diffDays === 1) {
+    return "Yesterday";
+  } else if (diffDays < 7) {
+    return diffDays + " days ago";
+  } else if (diffDays < 14) {
+    return "1 week ago";
+  } else if (diffDays < 30) {
+    return Math.floor(diffDays / 7) + " weeks ago";
+  } else if (diffDays < 60) {
+    return "1 month ago";
+  } else {
+    return Math.floor(diffDays / 30) + " months ago";
+  }
 }
 
 /* ======================== ADD CONTACT ======================== */
@@ -475,6 +500,22 @@ function searchContacts(e) {
 /* ======================== VIEW & EDIT CONTACT ======================== */
 
 /**
+ * OPTIMIZED: Views a single contact's details using pre-loaded contact data.
+ * Called from contextual trigger to avoid duplicate database lookup.
+ * @param {Object} contact - Pre-loaded contact object
+ * @returns {Card} The contact view card
+ */
+function viewContactCardWithData(contact) {
+    if (!contact) {
+        logAction("Error", "View Contact Error: No contact data provided");
+        return buildErrorCard("Contact data not available.");
+    }
+    
+    // Delegate to the main function with the contact already loaded
+    return buildContactViewCard(contact, false);
+}
+
+/**
  * Views a single contact's details, allows editing Status, Priority, Notes, and Tags.
  * (No pagination needed here as it's one contact)
  */
@@ -487,10 +528,22 @@ function viewContactCard(e) {
         logAction("Error", `View Contact Error: Contact not found ${email}`);
         return createNotification("Contact not found: " + email);
     }
+    
+    return buildContactViewCard(contact, editMode);
+}
 
-    // NEW: Get the auto-send setting
-    const userProps = PropertiesService.getUserProperties();
-    const autoSendStep1Enabled = userProps.getProperty("AUTO_SEND_STEP_1_ENABLED") === 'true';
+/**
+ * Builds the contact view card (shared implementation).
+ * OPTIMIZED: Reduced API calls and fixed template lookup.
+ * @param {Object} contact - The contact object
+ * @param {boolean} editMode - Whether to show edit mode
+ * @returns {Card} The contact view card
+ */
+function buildContactViewCard(contact, editMode) {
+    const cardStartTime = new Date().getTime();
+    
+    // NOTE: No property reads needed - email sending is done through bulk workflows
+    // This saves ~78ms of property read time + ~235ms of template check time
 
     const card = CardService.newCardBuilder();
 
@@ -757,23 +810,8 @@ function viewContactCard(e) {
         const actionsSection = CardService.newCardSection()
             .setHeader("Actions");
 
-        // --- MODIFIED: Dynamic Button Text for Template Email + Preview ---
-        if (contact.currentStep !== 2 && getTemplateForStep(contact.currentStep)) {
-            let templateButtonText = "Preview & Send Email";
-            if (contact.currentStep === 1 && autoSendStep1Enabled) {
-                templateButtonText = "Preview & Send Email";
-            }
-
-            actionsSection.addWidget(CardService.newTextButton()
-                .setText(templateButtonText) // Use dynamic text
-                .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-                .setOnClickAction(CardService.newAction()
-                    .setFunctionName("previewEmailBeforeSend") // Changed to preview first
-                    .setParameters({ email: contact.email })));
-        } else if (contact.currentStep !== 2) {
-            actionsSection.addWidget(CardService.newTextParagraph().setText("No template found for Step " + contact.currentStep + "."));
-        }
-        // --- END MODIFICATION ---
+        // NOTE: Email sending is handled through bulk workflows, not individual contact cards
+        // Template check removed to save ~235ms load time
 
         // Move to Next Step (Manual)
         if (contact.status !== "Completed" && contact.status !== "Unsubscribed" && contact.currentStep < CONFIG.SEQUENCE_STEPS) {
@@ -812,6 +850,7 @@ function viewContactCard(e) {
             .setFunctionName("buildAddOn")));
     card.addSection(navSection);
 
+    console.log("Card build: Total card build time: " + (new Date().getTime() - cardStartTime) + "ms");
     return card.build();
 }
 

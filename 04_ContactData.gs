@@ -8,6 +8,7 @@
  * KEY FUNCTIONS:
  * - getAllContactsData() - Retrieves all contacts with filtering
  * - getContactByEmail() - Find specific contact by email
+ * - getContactByEmailFast() - Fast single-contact lookup using TextFinder (optimized for contextual triggers)
  * - getContactsReadyForEmail() - Get contacts ready for next step
  * - getContactsInStep() - Get contacts in a specific sequence step
  * - getContactStats() - Calculate contact statistics
@@ -126,6 +127,79 @@ function getContactByEmail(email) {
     const normalizedEmail = email.toLowerCase().trim();
     const allContacts = getAllContactsData(); // Consider caching this if called very frequently in one execution
     return allContacts.find(contact => contact.email && contact.email.toLowerCase().trim() === normalizedEmail) || null;
+}
+
+/**
+ * FAST single-contact lookup by email using TextFinder.
+ * Optimized for contextual triggers - avoids reading entire sheet.
+ * Returns contact object or null if not found.
+ * 
+ * @param {string} email - The email to search for
+ * @param {string} [spreadsheetId] - Optional spreadsheet ID (avoids extra property read if already known)
+ * @returns {Object|null} Contact object or null
+ */
+function getContactByEmailFast(email, spreadsheetId) {
+  if (!email) return null;
+  
+  const normalizedEmail = email.toLowerCase().trim();
+  
+  // Use provided spreadsheetId or fetch it
+  const ssId = spreadsheetId || PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+  if (!ssId) return null;
+  
+  try {
+    const spreadsheet = SpreadsheetApp.openById(ssId);
+    const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
+    
+    if (!contactsSheet) return null;
+    
+    // Use TextFinder for O(1) lookup instead of reading all rows
+    const emailColumn = contactsSheet.getRange(2, CONTACT_COLS.EMAIL + 1, contactsSheet.getLastRow() - 1, 1);
+    const textFinder = emailColumn.createTextFinder(normalizedEmail).matchCase(false).matchEntireCell(true);
+    const foundRange = textFinder.findNext();
+    
+    if (!foundRange) return null;
+    
+    // Found the email - get the full row
+    const rowIndex = foundRange.getRow();
+    const numCols = Math.max(contactsSheet.getLastColumn(), Object.keys(CONTACT_COLS).length);
+    const rowData = contactsSheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
+    
+    // Build contact object
+    const isReady = isContactReadyForEmail(rowData[CONTACT_COLS.NEXT_STEP_DATE]);
+    
+    return {
+      firstName: rowData[CONTACT_COLS.FIRST_NAME] || "",
+      lastName: rowData[CONTACT_COLS.LAST_NAME] || "",
+      email: rowData[CONTACT_COLS.EMAIL] || "",
+      company: rowData[CONTACT_COLS.COMPANY] || "",
+      title: rowData[CONTACT_COLS.TITLE] || "",
+      currentStep: parseInt(rowData[CONTACT_COLS.CURRENT_STEP]) || 1,
+      lastEmailDate: rowData[CONTACT_COLS.LAST_EMAIL_DATE],
+      nextStepDate: rowData[CONTACT_COLS.NEXT_STEP_DATE],
+      status: rowData[CONTACT_COLS.STATUS] || "Active",
+      notes: rowData[CONTACT_COLS.NOTES] || "",
+      personalPhone: rowData[CONTACT_COLS.PERSONAL_PHONE] || "",
+      workPhone: rowData[CONTACT_COLS.WORK_PHONE] || "",
+      personalCalled: rowData[CONTACT_COLS.PERSONAL_CALLED] || "No",
+      workCalled: rowData[CONTACT_COLS.WORK_CALLED] || "No",
+      priority: rowData[CONTACT_COLS.PRIORITY] || "Medium",
+      tags: rowData[CONTACT_COLS.TAGS] || "",
+      sequence: rowData[CONTACT_COLS.SEQUENCE] || "",
+      industry: rowData[CONTACT_COLS.INDUSTRY] || "",
+      step1Subject: rowData[CONTACT_COLS.STEP1_SUBJECT] || "",
+      step1SentMessageId: rowData[CONTACT_COLS.STEP1_SENT_MESSAGE_ID] || "",
+      threadId: rowData[CONTACT_COLS.THREAD_ID] || "",
+      labeled: rowData[CONTACT_COLS.LABELED] || "No",
+      replyReceived: rowData[CONTACT_COLS.REPLY_RECEIVED] || "No",
+      replyDate: rowData[CONTACT_COLS.REPLY_DATE] || "",
+      rowIndex: rowIndex,
+      isReady: isReady
+    };
+  } catch (error) {
+    console.error("Error in getContactByEmailFast: " + error);
+    return null;
+  }
 }
 
 /* ======================== CONTACT FILTERING ======================== */

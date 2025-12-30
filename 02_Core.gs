@@ -19,7 +19,7 @@
  * - 04_ContactData.gs: getContactByEmail, getContactStats
  * - 13_ZoomInfoIntegration.gs: isZoomInfoEmail, buildZoomInfoImportCard
  * 
- * @version 2.3
+ * @version 2.4 - Redesigned dashboard: merged stats, primary/secondary action hierarchy
  */
 
 /* ======================== ADD-ON LIFECYCLE ======================== */
@@ -71,9 +71,15 @@ function checkGmailAuthorization() {
 
 /**
  * Called to build the contextual add-on view when an email is opened.
+ * OPTIMIZED: Eliminates duplicate API calls for faster load times.
+ * - Caches Gmail message object (Fix 1)
+ * - Uses fast single-contact lookup (Fix 2)
+ * - Passes contact data directly to viewContactCard (Fix 3)
+ * - Batches property reads (Fix 4)
  */
 function getContextualAddOn(e) {
-  console.log("Contextual trigger fired."); // Log for debugging
+  console.log("Contextual trigger fired.");
+  const startTime = new Date().getTime();
 
   try {
     // More detailed logging to help troubleshoot
@@ -85,8 +91,10 @@ function getContextualAddOn(e) {
       console.log("Gmail context data not available in event object");
     }
 
-    // Check database connection first
-    const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+    // FIX 4: Batch property reads - get all properties at once
+    const userProps = PropertiesService.getUserProperties().getProperties();
+    const spreadsheetId = userProps["SPREADSHEET_ID"];
+    
     if (!spreadsheetId) {
       console.log("No database connected. Showing setup card.");
       // If not connected, show the setup card
@@ -116,32 +124,32 @@ function getContextualAddOn(e) {
       return buildErrorCard("Could not get email information. Message ID is missing.");
     }
 
-    // Get the message (needed for ZoomInfo check, and potentially other direct message properties)
-    const message = GmailApp.getMessageById(messageId); // Keep this if isZoomInfoEmail uses it directly
-
-    // Check if this is a ZoomInfo email
-    if (isZoomInfoEmail(message)) { // Assuming isZoomInfoEmail needs the full message object
-      return buildZoomInfoImportCard(message);
-    }
-
-    // Continue with original logic for non-ZoomInfo emails
-    const messageDetails = getMessageDetails_(messageId); // This now includes 'To' header
-
-    if (!messageDetails) {
-      console.error("Failed to get message details");
+    // FIX 1: Get the message ONCE and reuse it (eliminates duplicate Gmail API call)
+    const message = GmailApp.getMessageById(messageId);
+    
+    if (!message) {
+      console.error("Failed to get message");
       return buildErrorCard("Could not fetch email details. Try refreshing or reloading the add-on.");
     }
 
-    // --- MODIFIED LOGIC TO CHECK SENDER/RECIPIENT ---
+    // Check if this is a ZoomInfo email (uses cached message object)
+    if (isZoomInfoEmail(message)) {
+      console.log("ZoomInfo email detected. Load time: " + (new Date().getTime() - startTime) + "ms");
+      return buildZoomInfoImportCard(message);
+    }
+
+    // FIX 1 continued: Extract headers directly from cached message object
+    // Instead of calling getMessageDetails_ which would call GmailApp.getMessageById again
+    const fromHeaderValue = message.getFrom();
+    const toHeaderValue = message.getTo();
+
+    // --- SENDER/RECIPIENT LOGIC (unchanged) ---
     const currentUserEmail = Session.getActiveUser() ? Session.getActiveUser().getEmail().toLowerCase() : null;
     if (!currentUserEmail) {
         console.error("Could not determine current user's email address.");
         logAction("Error", "Contextual Trigger Error: Could not get current user email.");
         return buildErrorCard("Could not identify the current user. Please ensure you are logged in correctly.");
     }
-
-    const fromHeaderValue = getHeader_(messageDetails.payload.headers, 'From');
-    const toHeaderValue = getHeader_(messageDetails.payload.headers, 'To'); // Get the 'To' header value
 
     const senderEmailRaw = extractEmailFromHeader_(fromHeaderValue);
     const recipientEmailRaw = extractEmailFromHeader_(toHeaderValue);
@@ -153,12 +161,12 @@ function getContextualAddOn(e) {
     if (senderEmailRaw && senderEmailRaw.toLowerCase() === currentUserEmail) {
         console.log("Email is FROM the current user. Switching to check the 'To' field for contact lookup.");
         targetEmailForLookup = recipientEmailRaw;
-        relevantHeaderForNameExtraction = toHeaderValue; // Use 'To' header for name extraction
+        relevantHeaderForNameExtraction = toHeaderValue;
         isCurrentUserSender = true;
     } else {
         console.log("Email is TO the current user (or from another external). Checking 'From' field for contact lookup.");
         targetEmailForLookup = senderEmailRaw;
-        relevantHeaderForNameExtraction = fromHeaderValue; // Use 'From' header for name extraction
+        relevantHeaderForNameExtraction = fromHeaderValue;
     }
 
     if (!targetEmailForLookup) {
@@ -169,25 +177,29 @@ function getContextualAddOn(e) {
 
     console.log("Successfully identified target email for lookup: " + targetEmailForLookup);
 
-    // Check if the target email exists in your contacts sheet
-    const contact = getContactByEmail(targetEmailForLookup);
+    // FIX 2: Use fast single-contact lookup (avoids reading entire sheet)
+    // Pass spreadsheetId to avoid extra property read
+    const contact = getContactByEmailFast(targetEmailForLookup, spreadsheetId);
 
     if (contact) {
       // --- Target Email FOUND in contacts ---
       const logMessage = isCurrentUserSender ? "Recipient found in contacts database." : "Sender found in contacts database.";
       console.log(logMessage + " Building contact view card for: " + targetEmailForLookup);
-      return viewContactCard({ parameters: { email: targetEmailForLookup, page: '1' } }); // page:1 is okay here
+      console.log("Contact lookup complete. Load time: " + (new Date().getTime() - startTime) + "ms");
+      
+      // FIX 3: Pass contact data directly to avoid duplicate lookup in viewContactCard
+      return viewContactCardWithData(contact);
     } else {
       // --- Target Email NOT FOUND in contacts ---
       const logMessage = isCurrentUserSender ? "Recipient NOT found in contacts database." : "Sender NOT found in contacts database.";
       console.log(logMessage + " Building 'Add Contact' card for: " + targetEmailForLookup);
+      console.log("Contact not found. Load time: " + (new Date().getTime() - startTime) + "ms");
 
       const addCard = CardService.newCardBuilder();
       const cardTitle = isCurrentUserSender ? "Recipient Not Found" : "Contact Not Found";
       const cardSubtitle = targetEmailForLookup;
       const paragraphText = isCurrentUserSender ? "This recipient is not in your sequence database." : "This sender is not in your sequence database.";
       const buttonText = isCurrentUserSender ? "Add Recipient to Sequence" : "Add Contact to Sequence";
-
 
       addCard.setHeader(CardService.newCardHeader()
         .setTitle(cardTitle)
@@ -202,7 +214,7 @@ function getContextualAddOn(e) {
       if (relevantHeaderForNameExtraction) {
         const namePart = relevantHeaderForNameExtraction.split('<')[0].trim();
         if (namePart) {
-          const nameParts = namePart.split(/\s+/); // Split by any whitespace
+          const nameParts = namePart.split(/\s+/);
           firstName = nameParts[0] || "";
           if (nameParts.length > 1) {
              lastName = nameParts.slice(1).join(' ') || "";
@@ -270,14 +282,8 @@ function buildAddOn(e) {
       throw new Error("Could not open spreadsheet");
     }
 
-    // Auto-migrate existing contacts to sequences on startup
-    migrateExistingContactsToSequences();
-    
-    // Ensure all required columns exist (for Reply tracking, etc.)
-    ensureContactsSheetColumns();
-    
-    // Ensure daily triggers exist (for test deployments where onInstall doesn't fire)
-    ensureTriggersExist();
+    // Run background maintenance only on first open of the day
+    runDailyStartupTasksIfNeeded();
 
     // Get stats and contacts
     const stats = getContactStats();
@@ -296,23 +302,8 @@ function buildAddOn(e) {
     // RETURNING USER: Show Regular Dashboard
     // ============================================================
     
-    // Add dashboard summary
-    const summarySection = CardService.newCardSection()
-        .setHeader("📊 Dashboard");
-
-    summarySection.addWidget(CardService.newKeyValue()
-        .setTopLabel("Total Contacts")
-        .setContent(stats.total.toString()));
-
+    // Calculate stats
     const totalReady = stats.readyForStep1 + stats.readyForStep2 + stats.readyForStep3 + stats.readyForStep4 + stats.readyForStep5;
-    summarySection.addWidget(CardService.newKeyValue()
-        .setTopLabel("Ready to Send Now")
-        .setContent(totalReady.toString())
-        .setBottomLabel(totalReady > 0 ? "⚠️ Action Required" : "✓ All caught up"));
-
-    card.addSection(summarySection);
-
-    // --- Smart Suggestions Section (PROMINENT) ---
     const readyContacts = contacts.filter(c => c.status === "Active" && c.isReady);
     const highPriorityPaused = contacts.filter(c => c.priority === "High" && c.status === "Paused");
     const completedThisWeek = contacts.filter(c => {
@@ -324,11 +315,22 @@ function buildAddOn(e) {
       return false;
     }).length;
 
-    // PRIMARY ACTION: Ready to send (most important)
+    // ═══════════════════════════════════════════════════════════════════
+    // SECTION 1: WHAT TO DO NEXT (with stats context)
+    // ═══════════════════════════════════════════════════════════════════
+    const actionSection = CardService.newCardSection()
+        .setHeader("🎯 What To Do Next");
+    
+    // Stats context line (merged from Dashboard)
+    const statsText = totalReady > 0
+        ? `📊 <b>${stats.total}</b> Contacts · <b>${totalReady}</b> Ready ⚠️`
+        : `📊 <b>${stats.total}</b> Contacts · ✓ All caught up`;
+    actionSection.addWidget(CardService.newDecoratedText()
+        .setText(statsText)
+        .setWrapText(true));
+
+    // Action prompt and button
     if (readyContacts.length > 0) {
-      const actionSection = CardService.newCardSection()
-          .setHeader("🎯 What To Do Next");
-      
       actionSection.addWidget(CardService.newTextParagraph()
           .setText(`<b>${readyContacts.length} contact${readyContacts.length > 1 ? 's are' : ' is'} ready for emails!</b>`));
       
@@ -339,19 +341,21 @@ function buildAddOn(e) {
               .setOnClickAction(CardService.newAction()
                   .setFunctionName("viewContactsReadyForEmail")
                   .setParameters({page: '1'}))));
-
-      card.addSection(actionSection);
+    } else {
+      actionSection.addWidget(CardService.newTextParagraph()
+          .setText("No emails to send right now. Check back later!"));
     }
 
+    card.addSection(actionSection);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SECTION 2: SUGGESTIONS (conditional)
+    // ═══════════════════════════════════════════════════════════════════
+    
     // Onboarding suggestions for new users (< 5 contacts)
     if (realContacts.length < 5) {
       const onboardingSection = CardService.newCardSection()
           .setHeader("💡 Getting Started Tips");
-
-      if (readyContacts.length === 0) {
-        onboardingSection.addWidget(CardService.newTextParagraph()
-            .setText("✅ All caught up! No emails to send right now."));
-      }
 
       onboardingSection.addWidget(CardService.newTextParagraph()
           .setText("📖 <b>New here?</b> Read the Help guide to learn all features - bulk sending, call tracking, templates & more!"));
@@ -375,11 +379,9 @@ function buildAddOn(e) {
       card.addSection(onboardingSection);
     } 
     // Regular suggestions for established users (5+ contacts)
-    else if (highPriorityPaused.length > 0 || completedThisWeek > 0 || readyContacts.length === 0) {
+    else if (highPriorityPaused.length > 0 || completedThisWeek > 0) {
       const suggestionsSection = CardService.newCardSection()
-          .setHeader("💡 Suggestions")
-          .setCollapsible(true)
-          .setNumUncollapsibleWidgets(1);
+          .setHeader("💡 Suggestions");
 
       if (highPriorityPaused.length > 0) {
         suggestionsSection.addWidget(CardService.newTextParagraph()
@@ -391,58 +393,73 @@ function buildAddOn(e) {
             .setText(`🎉 Great work! You finished ${completedThisWeek} email campaign${completedThisWeek > 1 ? 's' : ''} this week.`));
       }
 
-      if (readyContacts.length === 0) {
-        suggestionsSection.addWidget(CardService.newTextParagraph()
-            .setText("✅ All caught up! No emails to send right now."));
-      }
-
       card.addSection(suggestionsSection);
     }
 
-    // Main navigation section (not collapsible - always visible)
-    const navSection = CardService.newCardSection()
-        .setHeader("Navigation");
+    // ═══════════════════════════════════════════════════════════════════
+    // SECTION 3: QUICK ACTIONS (Primary navigation - prominent)
+    // ═══════════════════════════════════════════════════════════════════
+    const quickActionsSection = CardService.newCardSection()
+        .setHeader("📌 Quick Actions");
 
-    navSection.addWidget(CardService.newTextButton()
-        .setText("📧 Email Campaigns")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("buildSequenceManagementCard")));
+    quickActionsSection.addWidget(CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+            .setText("📧 Campaigns")
+            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("buildSequenceManagementCard"))));
 
-    navSection.addWidget(CardService.newTextButton()
-        .setText("👥 Add & Manage Contacts")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("buildContactManagementCard")
-             .setParameters({page: '1'})));
+    quickActionsSection.addWidget(CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+            .setText("➕ Add Contacts")
+            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("buildContactManagementCard")
+                .setParameters({page: '1'}))));
 
-    navSection.addWidget(CardService.newTextButton()
-        .setText("📞 Call Management")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("buildCallManagementCard")
-             .setParameters({page: '1'})));
+    quickActionsSection.addWidget(CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+            .setText("✏️ Edit Templates")
+            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("buildTemplateManagementCard"))));
 
-    navSection.addWidget(CardService.newTextButton()
-        .setText("✏️ Create/Edit Email Templates")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("buildTemplateManagementCard")));
+    // Divider before secondary actions
+    quickActionsSection.addWidget(CardService.newDivider());
 
-    navSection.addWidget(CardService.newTextButton()
+    // Secondary actions (compact DecoratedText with buttons)
+    quickActionsSection.addWidget(CardService.newDecoratedText()
+        .setText("📞 Calls")
+        .setButton(CardService.newTextButton()
+            .setText("Open")
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("buildCallManagementCard")
+                .setParameters({page: '1'}))));
+
+    quickActionsSection.addWidget(CardService.newDecoratedText()
         .setText("📊 Analytics")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("buildAnalyticsHubCard")));
+        .setButton(CardService.newTextButton()
+            .setText("Open")
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("buildAnalyticsHubCard"))));
 
-    navSection.addWidget(CardService.newTextButton()
+    quickActionsSection.addWidget(CardService.newDecoratedText()
         .setText("⚙️ Settings")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("buildSettingsCard")));
+        .setButton(CardService.newTextButton()
+            .setText("Open")
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("buildSettingsCard"))));
 
-    navSection.addWidget(CardService.newDivider());
+    quickActionsSection.addWidget(CardService.newDivider());
 
-    navSection.addWidget(CardService.newTextButton()
-        .setText("❓ Help & Instructions")
-        .setOnClickAction(CardService.newAction()
-            .setFunctionName("openHelpDocumentation")));
+    quickActionsSection.addWidget(CardService.newDecoratedText()
+        .setText("❓ Tutorials")
+        .setButton(CardService.newTextButton()
+            .setText("Open")
+            .setOnClickAction(CardService.newAction()
+                .setFunctionName("openHelpDocumentation"))));
 
-    card.addSection(navSection);
+    card.addSection(quickActionsSection);
 
     // Display database info (not collapsible, with clear button)
     const infoSection = CardService.newCardSection()
@@ -1271,6 +1288,44 @@ function buildConnectionErrorCard(error) {
   card.addSection(section);
 
   return card.build();
+}
+
+/* ======================== DAILY STARTUP TASKS ======================== */
+
+/**
+ * Runs background maintenance tasks only on the first open of the day.
+ * This avoids running expensive operations (migration, column checks, trigger scans)
+ * on every single dashboard load.
+ */
+function runDailyStartupTasksIfNeeded() {
+  const userProps = PropertiesService.getUserProperties();
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const lastRunDate = userProps.getProperty("LAST_STARTUP_TASKS_DATE");
+  
+  // Skip if we've already run today
+  if (lastRunDate === today) {
+    return;
+  }
+  
+  console.log("Running daily startup tasks (first open of " + today + ")");
+  
+  try {
+    // Auto-migrate existing contacts to sequences
+    migrateExistingContactsToSequences();
+    
+    // Ensure all required columns exist (for Reply tracking, etc.)
+    ensureContactsSheetColumns();
+    
+    // Ensure daily triggers exist (for test deployments where onInstall doesn't fire)
+    ensureTriggersExist();
+    
+    // Mark as completed for today
+    userProps.setProperty("LAST_STARTUP_TASKS_DATE", today);
+    console.log("Daily startup tasks completed successfully");
+  } catch (error) {
+    console.error("Error in daily startup tasks: " + error);
+    // Don't save the date on error - will retry next load
+  }
 }
 
 /* ======================== AUTOMATED TRIGGERS ======================== */

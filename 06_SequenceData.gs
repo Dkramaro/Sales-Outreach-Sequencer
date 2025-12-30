@@ -180,19 +180,23 @@ function createSequenceSheet(sequenceName) {
 /**
  * Gets the template for a specific step from sequence-specific sheets - ROW-BASED FORMAT
  * Reads from sequence sheets where each row represents a step
+ * OPTIMIZED: Can accept spreadsheetId to avoid extra property read
+ * @param {string} sequenceName - The sequence name
+ * @param {number} stepNumber - The step number
+ * @param {string} [spreadsheetId] - Optional spreadsheet ID to avoid property lookup
  */
-function getSequenceTemplateForStep(sequenceName, stepNumber) {
+function getSequenceTemplateForStep(sequenceName, stepNumber, spreadsheetId) {
   if (!sequenceName || !stepNumber) {
     return null;
   }
 
-  const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
-  if (!spreadsheetId) {
+  const ssId = spreadsheetId || PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+  if (!ssId) {
     return null;
   }
 
   try {
-    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const spreadsheet = SpreadsheetApp.openById(ssId);
     const sheetName = getSequenceSheetName(sequenceName);
     const sequenceSheet = spreadsheet.getSheetByName(sheetName);
 

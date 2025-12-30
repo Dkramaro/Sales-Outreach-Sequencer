@@ -274,7 +274,7 @@ function applyStatusFilter(e) {
 
 /**
  * Helper function to display a contact with a checkbox for selection in grouped format.
- * Ultra-compact design: all info visible at a glance, minimal vertical space.
+ * Rich metadata display with clear visual hierarchy.
  * @param {CardSection} section The section to add the widget to.
  * @param {object} contact The contact object.
  * @param {boolean} isChecked Whether the checkbox should be initially checked.
@@ -293,8 +293,11 @@ function displayContactWithSelectionGrouped(section, contact, isChecked, originD
   let priorityIcon = contact.priority === "High" ? "🔥" : 
                      contact.priority === "Medium" ? "🟠" : "⚪";
 
-  // Build rich checkbox title: icons + name
+  // Build rich checkbox title: icons + name + sequence
   let checkboxTitle = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
+  if (contact.sequence && contact.sequence.trim()) {
+    checkboxTitle += " · " + contact.sequence;
+  }
 
   // Checkbox with email as the item
   section.addWidget(CardService.newSelectionInput()
@@ -303,17 +306,44 @@ function displayContactWithSelectionGrouped(section, contact, isChecked, originD
       .setFieldName("contact_" + contact.email.replace(/[@\\.+-]/g, "_"))
       .addItem(contact.email, contact.email, isChecked));
 
-  // Build metadata string - only include what exists
-  let infoParts = [];
-  if (contact.title && contact.title.trim()) infoParts.push(contact.title);
-  if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") infoParts.push("📅 " + lastEmailDate);
-  if (contact.tags && contact.tags.trim()) infoParts.push("🏷️ " + contact.tags);
-  if (contact.industry && contact.industry.trim()) infoParts.push(contact.industry);
+  // Rich metadata - organized in multiple lines for clarity
+  // Line 1: Job title
+  let line1Parts = [];
+  if (contact.title && contact.title.trim()) line1Parts.push("💼 " + contact.title);
   
-  // Only show info line if there's metadata
-  if (infoParts.length > 0) {
-    section.addWidget(CardService.newTextParagraph()
-        .setText("<font color='#5f6368'>" + infoParts.join(" · ") + "</font>"));
+  // Line 2: Last email date + ready status + industry
+  let line2Parts = [];
+  if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") {
+    line2Parts.push("📅 " + lastEmailDate);
+  } else {
+    line2Parts.push("📅 Never emailed");
+  }
+  if (contact.isReady) {
+    line2Parts.push("⏰ Ready now");
+  }
+  if (contact.industry && contact.industry.trim()) line2Parts.push(contact.industry);
+  
+  // Line 3: Tags
+  let line3Parts = [];
+  if (contact.tags && contact.tags.trim()) line3Parts.push("🏷️ " + contact.tags);
+  
+  // Build metadata display
+  let metadataText = "";
+  if (line1Parts.length > 0) {
+    metadataText += line1Parts.join(" · ");
+  }
+  if (line2Parts.length > 0) {
+    if (metadataText) metadataText += "<br>";
+    metadataText += "<font color='#5f6368'>" + line2Parts.join(" · ") + "</font>";
+  }
+  if (line3Parts.length > 0) {
+    if (metadataText) metadataText += "<br>";
+    metadataText += "<font color='#5f6368'>" + line3Parts.join(" · ") + "</font>";
+  }
+  
+  // Only show info if there's metadata
+  if (metadataText) {
+    section.addWidget(CardService.newTextParagraph().setText(metadataText));
   }
 
   // Compact action buttons with view contact link
@@ -377,23 +407,43 @@ function displayContactWithSelection(section, contact, isChecked, originDetails)
       .setFieldName("contact_" + contact.email.replace(/[@\\.+-]/g, "_"))
       .addItem(contact.email, contact.email, isChecked));
 
-  // Build metadata - company, step, sequence on first line
-  let companyInfo = [];
-  if (contact.company && contact.company.trim()) companyInfo.push(contact.company);
-  companyInfo.push("Step " + contact.currentStep);
-  if (contact.sequence && contact.sequence.trim()) companyInfo.push(contact.sequence);
+  // Rich metadata - organized clearly
+  // Line 1: Company, step, sequence
+  let line1Parts = [];
+  if (contact.company && contact.company.trim()) line1Parts.push("🏢 " + contact.company);
+  line1Parts.push("Step " + contact.currentStep);
+  if (contact.sequence && contact.sequence.trim()) line1Parts.push(contact.sequence);
   
-  // Additional metadata on second line
-  let metaInfo = [];
-  if (contact.title && contact.title.trim()) metaInfo.push(contact.title);
-  if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") metaInfo.push("📅 " + lastEmailDate);
-  if (contact.tags && contact.tags.trim()) metaInfo.push("🏷️ " + contact.tags);
-  if (contact.industry && contact.industry.trim()) metaInfo.push(contact.industry);
+  // Line 2: Job title
+  let line2Parts = [];
+  if (contact.title && contact.title.trim()) line2Parts.push("💼 " + contact.title);
+  
+  // Line 3: Date, ready status, industry
+  let line3Parts = [];
+  if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") {
+    line3Parts.push("📅 " + lastEmailDate);
+  } else {
+    line3Parts.push("📅 Never emailed");
+  }
+  if (contact.isReady) {
+    line3Parts.push("⏰ Ready now");
+  }
+  if (contact.industry && contact.industry.trim()) line3Parts.push(contact.industry);
+  
+  // Line 4: Tags
+  let line4Parts = [];
+  if (contact.tags && contact.tags.trim()) line4Parts.push("🏷️ " + contact.tags);
 
-  // Compact info display
-  let infoText = "<b>" + companyInfo.join(" · ") + "</b>";
-  if (metaInfo.length > 0) {
-    infoText += "<br><font color='#5f6368'>" + metaInfo.join(" · ") + "</font>";
+  // Build metadata display
+  let infoText = "<b>" + line1Parts.join(" · ") + "</b>";
+  if (line2Parts.length > 0) {
+    infoText += "<br>" + line2Parts.join(" · ");
+  }
+  if (line3Parts.length > 0) {
+    infoText += "<br><font color='#5f6368'>" + line3Parts.join(" · ") + "</font>";
+  }
+  if (line4Parts.length > 0) {
+    infoText += "<br><font color='#5f6368'>" + line4Parts.join(" · ") + "</font>";
   }
   section.addWidget(CardService.newTextParagraph().setText(infoText));
 
