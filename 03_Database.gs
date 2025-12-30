@@ -795,8 +795,8 @@ function setupLogsSheet(sheet) {
 /* ======================== LOGGING ======================== */
 
 /**
- * Adds ONE demo contact on first database setup - ready to send at Step 1
- * This lets users immediately try the email flow
+ * Adds 10 demo contacts on first database setup - ready to send at Step 1
+ * This demonstrates bulk email processing capability during onboarding
  */
 function addDemoContactsIfNeeded() {
   const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
@@ -816,29 +816,75 @@ function addDemoContactsIfNeeded() {
       return;
     }
     
-    // Single demo contact at Step 1, ready to send immediately
+    // 10 demo contacts at Step 1, ready to send immediately
+    // Varied companies, titles, and industries to show bulk processing power
     // Uses New Business Sequence which is created by default
-    const demoContact = [
-      "Demo", "Contact", "demo@example.com", "Example Company", "Manager",
-      1, "", "", "Active", "Try sending an email to this demo contact! Delete when done.",
-      "", "", "No", "No", "Medium", "demo",
-      "New Business Sequence", "SaaS / B2B Tech", "", "", "", "", "No",
-      "No", ""  // Reply Received, Reply Date
+    const demoContacts = [
+      ["Sarah", "Johnson", "sarah.johnson@example.com", "Acme Corp", "VP of Sales",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "High", "demo1",
+       "New Business Sequence", "SaaS / B2B Tech", "", "", "", "", "No", "No", ""],
+      
+      ["Michael", "Chen", "michael.chen@example.com", "TechStart Inc", "CTO",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "High", "demo2",
+       "New Business Sequence", "Enterprise Software", "", "", "", "", "No", "No", ""],
+      
+      ["Emily", "Williams", "emily.williams@example.com", "Growth Labs", "Marketing Director",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "Medium", "demo3",
+       "New Business Sequence", "Marketing Agency", "", "", "", "", "No", "No", ""],
+      
+      ["David", "Rodriguez", "david.rodriguez@example.com", "CloudBase Systems", "CEO",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "High", "demo4",
+       "New Business Sequence", "Cloud Infrastructure", "", "", "", "", "No", "No", ""],
+      
+      ["Jessica", "Kim", "jessica.kim@example.com", "DataFlow Analytics", "Product Manager",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "Medium", "demo5",
+       "New Business Sequence", "Data Analytics", "", "", "", "", "No", "No", ""],
+      
+      ["James", "Thompson", "james.thompson@example.com", "Innovate Partners", "Managing Director",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "High", "demo6",
+       "New Business Sequence", "Consulting", "", "", "", "", "No", "No", ""],
+      
+      ["Amanda", "Davis", "amanda.davis@example.com", "ScaleUp Ventures", "Head of Operations",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "Medium", "demo7",
+       "New Business Sequence", "Venture Capital", "", "", "", "", "No", "No", ""],
+      
+      ["Robert", "Martinez", "robert.martinez@example.com", "Enterprise Solutions", "Sales Director",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "Medium", "demo8",
+       "New Business Sequence", "Enterprise Software", "", "", "", "", "No", "No", ""],
+      
+      ["Lisa", "Anderson", "lisa.anderson@example.com", "Digital First Media", "CMO",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "High", "demo9",
+       "New Business Sequence", "Digital Marketing", "", "", "", "", "No", "No", ""],
+      
+      ["Kevin", "Taylor", "kevin.taylor@example.com", "FutureTech Labs", "Engineering Lead",
+       1, "", "", "Active", "Demo contact - will be auto-deleted",
+       "", "", "No", "No", "Medium", "demo10",
+       "New Business Sequence", "SaaS / B2B Tech", "", "", "", "", "No", "No", ""]
     ];
     
-    contactsSheet.getRange(2, 1, 1, demoContact.length).setValues([demoContact]);
+    contactsSheet.getRange(2, 1, demoContacts.length, demoContacts[0].length).setValues(demoContacts);
     SpreadsheetApp.flush();
     
     PropertiesService.getUserProperties().setProperty("DEMO_CONTACTS_ADDED", "true");
-    logAction("Demo Setup", "Added demo contact for onboarding");
+    logAction("Demo Setup", "Added 10 demo contacts for onboarding bulk demo");
     
   } catch (error) {
-    console.error("Error adding demo contact: " + error);
+    console.error("Error adding demo contacts: " + error);
   }
 }
 
 /**
- * Deletes the demo contact from the database after user sends their first email
+ * Deletes ALL demo contacts from the database after user completes the demo
+ * Removes any contact with @example.com email
  */
 function deleteDemoContact(demoEmail) {
   const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
@@ -851,19 +897,23 @@ function deleteDemoContact(demoEmail) {
     if (!contactsSheet) return;
     
     const data = contactsSheet.getDataRange().getValues();
+    let deletedCount = 0;
     
-    // Find and delete the demo contact row
+    // Find and delete ALL demo contact rows (iterate backwards to handle row shifts)
     for (let i = data.length - 1; i >= 1; i--) {
       const email = data[i][CONTACT_COLS.EMAIL];
       if (email && email.toString().toLowerCase().includes("example.com")) {
         contactsSheet.deleteRow(i + 1); // +1 for 1-based row index
-        SpreadsheetApp.flush();
-        logAction("Demo Cleanup", "Auto-deleted demo contact after first email: " + email);
-        break;
+        deletedCount++;
       }
     }
+    
+    if (deletedCount > 0) {
+      SpreadsheetApp.flush();
+      logAction("Demo Cleanup", `Auto-deleted ${deletedCount} demo contact(s) after bulk demo`);
+    }
   } catch (error) {
-    console.error("Error deleting demo contact: " + error);
+    console.error("Error deleting demo contacts: " + error);
   }
 }
 

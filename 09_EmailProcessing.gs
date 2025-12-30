@@ -300,15 +300,17 @@ function processBulkEmails(selectedEmailsArray, stepContextValue, pageContextVal
     }
     // --- END OF BATCH WRITE ---
 
-    // --- Check for demo contact and handle special case ---
-    let processedDemoContact = false;
+    // --- Check for demo contacts and handle special case ---
+    let demoContactsProcessed = 0;
     for (const email of selectedEmails) {
       if (email.toLowerCase().includes("example.com")) {
-        processedDemoContact = true;
-        // Auto-delete the demo contact from the database
-        deleteDemoContact(email.toLowerCase());
-        break;
+        demoContactsProcessed++;
       }
+    }
+    
+    // If any demo contacts were processed, delete them all
+    if (demoContactsProcessed > 0) {
+      deleteDemoContact(); // This now deletes ALL demo contacts
     }
 
     // --- Build final response card ---
@@ -320,17 +322,17 @@ function processBulkEmails(selectedEmailsArray, stepContextValue, pageContextVal
     if (failureCount > 0) message += ` Failed to process ${failureCount} contact(s).`;
     if (pdfAttachmentError) message += ` NOTE: ${pdfAttachmentError}`;
 
-    // If demo contact was processed, show special wizard completion card
-    if (processedDemoContact && draftCount > 0) {
+    // If demo contacts were processed, show special wizard completion card
+    if (demoContactsProcessed > 0 && draftCount > 0) {
       return CardService.newActionResponseBuilder()
-        .setNotification(CardService.newNotification().setText("🎉 Demo email created! Check Gmail Drafts."))
+        .setNotification(CardService.newNotification().setText(`🎉 ${draftCount} demo drafts created! Check Gmail Drafts.`))
         .setNavigation(CardService.newNavigation().updateCard(buildDemoEmailSuccessCard()))
         .build();
     }
 
     // Check if user is still in onboarding wizard - show success card for first real email
     const wizardCompleted = PropertiesService.getUserProperties().getProperty("SKIP_WIZARD") === "true";
-    if (!wizardCompleted && (draftCount > 0 || sentCount > 0) && !processedDemoContact) {
+    if (!wizardCompleted && (draftCount > 0 || sentCount > 0) && demoContactsProcessed === 0) {
       // Mark wizard as complete and first real email sent
       PropertiesService.getUserProperties().setProperty("SKIP_WIZARD", "true");
       PropertiesService.getUserProperties().setProperty("FIRST_REAL_EMAIL_SENT", "true");

@@ -549,10 +549,6 @@ function buildWelcomeWizard() {
  */
 function buildGettingStartedWizard(stats, contacts) {
   const card = CardService.newCardBuilder();
-  
-  // Check if demo contact exists
-  const demoContact = contacts.find(c => c.email.includes("example.com"));
-  const hasOnlyDemo = demoContact && contacts.length === 1;
 
   card.setHeader(CardService.newCardHeader()
       .setTitle("Getting Started")
@@ -567,24 +563,32 @@ function buildGettingStartedWizard(stats, contacts) {
                "⏳ Step 3: Send your first email"));
   card.addSection(progressSection);
 
-  // If demo contact exists, encourage trying it
-  if (hasOnlyDemo) {
+  // If demo contacts exist, encourage trying bulk processing
+  const demoContacts = contacts.filter(c => c.email.includes("example.com"));
+  const hasDemoContacts = demoContacts.length > 0 && contacts.length === demoContacts.length;
+  
+  if (hasDemoContacts) {
     const tryItSection = CardService.newCardSection()
-        .setHeader("🎯 Try It Now (Optional)");
+        .setHeader("🚀 See Bulk Processing in Action!");
     
     tryItSection.addWidget(CardService.newTextParagraph()
-        .setText("We added a <b>demo contact</b> so you can test the email flow. Try sending a test email!"));
+        .setText(`We added <b>${demoContacts.length} demo contacts</b> to show you how quickly this system can process emails in bulk.\n\n` +
+                 `<b>What happens next:</b>\n` +
+                 `• All ${demoContacts.length} contacts are pre-selected\n` +
+                 `• Click the button below to see them\n` +
+                 `• Press "<b>Create Drafts</b>" in the sticky footer\n` +
+                 `• Watch all ${demoContacts.length} emails get created instantly!`));
     
     tryItSection.addWidget(CardService.newButtonSet()
         .addButton(CardService.newTextButton()
-            .setText("📧 Send Test Email to Demo Contact")
+            .setText(`📧 Process ${demoContacts.length} Demo Emails`)
             .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
             .setOnClickAction(CardService.newAction()
                 .setFunctionName("viewContactsReadyForEmail")
-                .setParameters({page: '1'}))));
+                .setParameters({page: '1', isDemoMode: 'true'}))));
     
     tryItSection.addWidget(CardService.newTextParagraph()
-        .setText("<i>This creates a draft in Gmail - nothing sends automatically!</i>"));
+        .setText("<i>Creates drafts in Gmail - nothing sends automatically! Demo contacts are auto-deleted after.</i>"));
     
     card.addSection(tryItSection);
   }
@@ -1136,26 +1140,39 @@ function buildFirstContactAddedCard(firstName, email) {
 }
 
 /**
- * Success card shown after demo email is created - guides user to next steps
+ * Success card shown after demo emails are created - guides user to next steps
+ * Celebrates bulk processing capability with 10 demo contacts
  */
 function buildDemoEmailSuccessCard() {
   const card = CardService.newCardBuilder();
 
   card.setHeader(CardService.newCardHeader()
-      .setTitle("🎉 Demo Email Created!")
-      .setSubtitle("You did it!")
+      .setTitle("🎉 10 Drafts Created!")
+      .setSubtitle("Bulk processing complete!")
       .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/check_circle_black_48dp.png"));
 
-  // Success message
+  // Success message - emphasize bulk processing speed
   const successSection = CardService.newCardSection()
-      .setHeader("What happened");
+      .setHeader("⚡ That's Bulk Power!");
   
   successSection.addWidget(CardService.newTextParagraph()
-      .setText("We created an email draft for the demo contact.\n\n" +
-               "<b>📬 Check your Gmail Drafts folder</b> to see it!\n\n" +
-               "The demo contact has been automatically removed from your database."));
+      .setText("You just created <b>10 personalized email drafts</b> in seconds!\n\n" +
+               "📬 <b>Check your Gmail Drafts folder</b> to see all 10 emails.\n\n" +
+               "Each email is personalized with the contact's name, company, and title. Imagine doing this for 100 or 1,000 contacts!"));
 
   card.addSection(successSection);
+
+  // What happened section
+  const detailsSection = CardService.newCardSection()
+      .setHeader("What happened");
+  
+  detailsSection.addWidget(CardService.newTextParagraph()
+      .setText("• Created 10 personalized email drafts\n" +
+               "• Each uses your email template\n" +
+               "• All demo contacts auto-removed\n" +
+               "• Ready for real contacts now!"));
+
+  card.addSection(detailsSection);
 
   // Pro tip about settings
   const tipSection = CardService.newCardSection()
@@ -1169,7 +1186,7 @@ function buildDemoEmailSuccessCard() {
 
   // Next steps
   const nextSection = CardService.newCardSection()
-      .setHeader("Next Steps");
+      .setHeader("🚀 Ready to Start?");
 
   nextSection.addWidget(CardService.newTextParagraph()
       .setText("🎯 <b>Recommended:</b> Add yourself as your first contact! This way you can see exactly how your emails look before sending to external contacts."));

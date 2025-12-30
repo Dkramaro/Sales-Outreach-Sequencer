@@ -567,6 +567,7 @@ function viewContactsReadyForEmail(e) {
    const pageSize = CONFIG.PAGE_SIZE;
    // Pre-select all contacts by default (user deselects unwanted ones)
    const isSelectAll = e?.parameters?.selectAll !== 'false';
+   const isDemoMode = e?.parameters?.isDemoMode === 'true';
 
    // Get the auto-send setting
    const userProps = PropertiesService.getUserProperties();
@@ -574,16 +575,28 @@ function viewContactsReadyForEmail(e) {
 
    const card = CardService.newCardBuilder();
 
-   card.setHeader(CardService.newCardHeader()
-       .setTitle("Contacts Ready for Email")
-       .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/mark_email_read_black_48dp.png")); 
-
    const readyContacts = getContactsReadyForEmail(); 
    const totalContacts = readyContacts.length;
    const totalPages = Math.ceil(totalContacts / pageSize);
    const startIndex = (page - 1) * pageSize;
    const endIndex = Math.min(startIndex + pageSize, totalContacts);
    const contactsToShow = readyContacts.slice(startIndex, endIndex);
+   
+   // Check if all contacts are demo contacts (for onboarding display)
+   const demoContactCount = readyContacts.filter(c => c.email && c.email.includes("example.com")).length;
+   const isAllDemoContacts = demoContactCount > 0 && demoContactCount === totalContacts;
+
+   // Dynamic header based on demo mode
+   if (isAllDemoContacts || isDemoMode) {
+     card.setHeader(CardService.newCardHeader()
+         .setTitle("🚀 Bulk Demo Ready!")
+         .setSubtitle(`${totalContacts} contacts pre-selected`)
+         .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/mark_email_read_black_48dp.png"));
+   } else {
+     card.setHeader(CardService.newCardHeader()
+         .setTitle("Contacts Ready for Email")
+         .setImageUrl("https://www.gstatic.com/images/icons/material/system/1x/mark_email_read_black_48dp.png"));
+   }
 
    // Initialize SELECT_ALL_STATE for pre-selected contacts (fixes the deselection bug)
    if (isSelectAll && contactsToShow.length > 0) {
@@ -594,12 +607,25 @@ function viewContactsReadyForEmail(e) {
        }));
    }
 
-   // Instructional header section
+   // Instructional header section - special for demo mode
    const instructionSection = CardService.newCardSection();
-   instructionSection.addWidget(CardService.newDecoratedText()
-       .setTopLabel("📋 SELECT CONTACTS TO EMAIL")
-       .setText("All contacts below are ready for their next email. Uncheck any you want to skip from this batch.")
-       .setWrapText(true));
+   
+   if (isAllDemoContacts || isDemoMode) {
+     // Demo mode instructions - emphasize bulk processing
+     instructionSection.addWidget(CardService.newDecoratedText()
+         .setTopLabel("⚡ BULK PROCESSING DEMO")
+         .setText(`All <b>${totalContacts} demo contacts</b> are pre-selected and ready!\n\nJust press <b>"📧 Create Drafts"</b> in the sticky footer below to watch all emails get created instantly.`)
+         .setWrapText(true));
+     
+    instructionSection.addWidget(CardService.newTextParagraph()
+        .setText(`<b>👇 Scroll down then tap "Create Drafts"</b>`));
+   } else {
+     // Normal instructions
+     instructionSection.addWidget(CardService.newDecoratedText()
+         .setTopLabel("📋 SELECT CONTACTS TO EMAIL")
+         .setText("All contacts below are ready for their next email. Uncheck any you want to skip from this batch.")
+         .setWrapText(true));
+   }
    card.addSection(instructionSection);
 
    const contactsSection = CardService.newCardSection()
