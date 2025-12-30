@@ -367,6 +367,26 @@ function addContact(e) {
 
     contactsSheet.appendRow(newRowData);
     SpreadsheetApp.flush();
+    
+    // Add to cache for fast future lookups
+    const newContact = {
+      firstName: firstName,
+      lastName: lastName,
+      email: email,
+      company: company,
+      title: title,
+      currentStep: 1,
+      status: "Active",
+      priority: priority,
+      sequence: sequence,
+      industry: industry,
+      personalPhone: personalPhone,
+      workPhone: workPhone,
+      tags: tags,
+      rowIndex: contactsSheet.getLastRow(),
+      isReady: true
+    };
+    addContactToCache(newContact);
 
     logAction("Add Contact", "Added contact: " + firstName + " " + lastName + " (" + email + ") with sequence: [" + sequence + "], tags: [" + tags + "], industry: [" + industry + "]");
 
@@ -1073,6 +1093,10 @@ function saveAllContactChanges(e) {
         if (changesMade) {
             rowRange.setValues([rowData]);
             SpreadsheetApp.flush();
+            
+            // Invalidate cache since contact data changed
+            removeContactFromCache(email);
+            
             logAction("Update Contact Batch", `Saved changes for ${contact.firstName} ${contact.lastName} (${email}): ${logDetails.join(', ')}.`);
             return CardService.newActionResponseBuilder()
                 .setNotification(CardService.newNotification().setText("Contact details updated successfully!"))

@@ -840,6 +840,9 @@ function checkForReplies() {
 function dailyMaintenance() {
   console.log("=== DAILY MAINTENANCE STARTED ===");
   
+  // Clear contact cache at start of daily maintenance to ensure fresh data
+  clearContactCache();
+  
   let threadValidationResult = { validated: 0, total: 0 };
   let replyCheckResult = { newReplies: 0, checked: 0 };
 

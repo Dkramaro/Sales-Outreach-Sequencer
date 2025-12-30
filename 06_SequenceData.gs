@@ -9,7 +9,7 @@
  * - getAvailableSequences() - Discover sequences by sheet names
  * - getSequenceSheetName() - Get full sheet name from sequence name
  * - createSequenceSheet() - Create new sequence sheet with default templates
- * - getSequenceTemplateForStep() - Get template for specific sequence and step
+ * - getSequenceTemplateForStep() - Get template for specific sequence and step (with execution-scoped caching)
  * - getEmailTemplates() - Get all templates (legacy support)
  * - getTemplateForStep() - Get template for step (legacy support)
  * - updateContactSequence() - Change contact's sequence assignment
@@ -19,8 +19,46 @@
  * - 03_Database.gs: logAction
  * - 04_ContactData.gs: getContactByEmail
  * 
- * @version 2.3
+ * @version 2.4 - Added execution-scoped template caching for bulk operations
  */
+
+/* ======================== EXECUTION-SCOPED TEMPLATE CACHE ======================== */
+
+/**
+ * Execution-scoped template cache.
+ * This cache lives only within a single script execution.
+ * When the execution ends, the cache is automatically cleared.
+ * This ensures fresh templates are always fetched on each new action
+ * while avoiding redundant reads within bulk operations.
+ */
+let _templateCache = {};
+
+/**
+ * Gets a template from the execution-scoped cache.
+ * @param {string} sequenceName - The sequence name
+ * @param {number} stepNumber - The step number
+ * @returns {Object|null} Cached template or null if not cached
+ */
+function getTemplateFromExecutionCache(sequenceName, stepNumber) {
+  const cacheKey = sequenceName + "_" + stepNumber;
+  if (_templateCache[cacheKey]) {
+    console.log("Template cache HIT: " + cacheKey);
+    return _templateCache[cacheKey];
+  }
+  return null;
+}
+
+/**
+ * Stores a template in the execution-scoped cache.
+ * @param {string} sequenceName - The sequence name
+ * @param {number} stepNumber - The step number
+ * @param {Object} template - The template object to cache
+ */
+function storeTemplateInExecutionCache(sequenceName, stepNumber, template) {
+  const cacheKey = sequenceName + "_" + stepNumber;
+  _templateCache[cacheKey] = template;
+  console.log("Template cached: " + cacheKey);
+}
 
 /* ======================== SEQUENCE DISCOVERY ======================== */
 
@@ -190,6 +228,13 @@ function getSequenceTemplateForStep(sequenceName, stepNumber, spreadsheetId) {
     return null;
   }
 
+  // CHECK EXECUTION-SCOPED CACHE FIRST
+  const cachedTemplate = getTemplateFromExecutionCache(sequenceName, stepNumber);
+  if (cachedTemplate) {
+    return cachedTemplate;
+  }
+
+  // CACHE MISS - Fetch from spreadsheet
   const ssId = spreadsheetId || PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
   if (!ssId) {
     return null;
@@ -221,13 +266,18 @@ function getSequenceTemplateForStep(sequenceName, stepNumber, spreadsheetId) {
       const rowStep = parseInt(row[0]);
       
       if (rowStep === stepNumber) {
-        return {
+        const template = {
           sequence: sequenceName,
           name: String(row[1] || `Step ${stepNumber} - ${sequenceName}`),
           subject: String(row[2] || `Step ${stepNumber} Follow-up`),
           body: String(row[3] || `Template content for step ${stepNumber}`),
           stepNumber: stepNumber
         };
+        
+        // Store in execution-scoped cache for reuse within this execution
+        storeTemplateInExecutionCache(sequenceName, stepNumber, template);
+        
+        return template;
       }
     }
 

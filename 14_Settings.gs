@@ -208,7 +208,8 @@ function buildSettingsCard() {
   // Divider before priority filters
   filtersSection.addWidget(CardService.newDivider());
 
-  // Priority filters - SINGLE widget with 3 items
+  // Priority filters - Using individual SWITCH fields for reliability
+  // (CHECK_BOX with multiple items has known issues with form submission)
   const priorityFiltersString = userProps.getProperty("PRIORITY_FILTERS");
   let initiallySelectedPriorities = [];
   if (priorityFiltersString === null || priorityFiltersString === undefined || priorityFiltersString === "") {
@@ -217,13 +218,24 @@ function buildSettingsCard() {
       initiallySelectedPriorities = priorityFiltersString.split(',').map(p => p.trim());
   }
 
+  filtersSection.addWidget(CardService.newDecoratedText()
+      .setText("Show Contacts by Priority")
+      .setWrapText(false));
+
   filtersSection.addWidget(CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
-      .setTitle("Show Contacts by Priority")
-      .setFieldName("priorityFilters")
-      .addItem("🔥 High Priority", "High", initiallySelectedPriorities.includes("High"))
-      .addItem("🟠 Medium Priority", "Medium", initiallySelectedPriorities.includes("Medium"))
-      .addItem("⚪ Low Priority", "Low", initiallySelectedPriorities.includes("Low")));
+      .setFieldName("priorityHigh")
+      .addItem("🔥 High Priority", "true", initiallySelectedPriorities.includes("High")));
+
+  filtersSection.addWidget(CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.CHECK_BOX)
+      .setFieldName("priorityMedium")
+      .addItem("🟠 Medium Priority", "true", initiallySelectedPriorities.includes("Medium")));
+
+  filtersSection.addWidget(CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.CHECK_BOX)
+      .setFieldName("priorityLow")
+      .addItem("⚪ Low Priority", "true", initiallySelectedPriorities.includes("Low")));
 
   card.addSection(filtersSection);
 
@@ -285,6 +297,13 @@ function buildSettingsCard() {
           .setText("🏷️ Find & Label Sent Emails")
           .setOnClickAction(CardService.newAction()
               .setFunctionName("startLabelingProcess"))));
+
+  // Cache refresh action
+  systemSection.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+          .setText("🔄 Refresh Contact Cache")
+          .setOnClickAction(CardService.newAction()
+              .setFunctionName("refreshContactCacheAction"))));
 
   // Back navigation
   systemSection.addWidget(CardService.newDivider());
@@ -485,11 +504,36 @@ function autoSaveAutoSendToggle(e) {
 }
 
 /**
+ * Refreshes the contact cache by clearing and repopulating.
+ * Called from Settings UI.
+ */
+function refreshContactCacheAction() {
+  try {
+    clearContactCache();
+    const count = populateContactCache();
+    
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification()
+            .setText(`✓ Cache refreshed with ${count} contacts`))
+        .build();
+  } catch (error) {
+    console.error("Error refreshing cache: " + error);
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification()
+            .setText("Error refreshing cache: " + error.message))
+        .build();
+  }
+}
+
+/**
 * Saves settings from the Settings card.
 * Handles consolidated field names from the redesigned UI.
 */
 function saveSettings(e) {
   const formInput = e.formInput || {};
+  
+  // Debug logging to diagnose priority filter issues
+  console.log("saveSettings formInput:", JSON.stringify(formInput));
   
   // Extract form values with defaults
   const delayDaysInput = formInput.delayDays;
@@ -512,16 +556,19 @@ function saveSettings(e) {
       }
   }
 
-  // Handle priority filters - now a single field that returns array or string
+  // Handle priority filters - individual switch fields for reliability
   let collectedPriorities = [];
-  if (formInput.priorityFilters) {
-      // Can be array (multiple selected) or string (single selected)
-      if (Array.isArray(formInput.priorityFilters)) {
-          collectedPriorities = formInput.priorityFilters;
-      } else {
-          collectedPriorities = [formInput.priorityFilters];
-      }
+  if (formInput.priorityHigh === "true") {
+      collectedPriorities.push("High");
   }
+  if (formInput.priorityMedium === "true") {
+      collectedPriorities.push("Medium");
+  }
+  if (formInput.priorityLow === "true") {
+      collectedPriorities.push("Low");
+  }
+  
+  console.log("Collected priorities:", JSON.stringify(collectedPriorities));
  
   // Validate delay days
   const delayDays = parseInt(delayDaysInput);

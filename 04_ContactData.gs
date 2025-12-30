@@ -16,12 +16,228 @@
  * - migrateExistingContactsToSequences() - Data migration utility
  * - validateSequenceConsistency() - Data validation utility
  * 
+ * CACHE FUNCTIONS:
+ * - getContactFromCache() - Retrieve contact from memory cache
+ * - updateContactInCache() - Update/add contact in cache
+ * - removeContactFromCache() - Remove contact from cache
+ * - clearContactCache() - Clear all cached contacts
+ * - populateContactCache() - Pre-load recent contacts into cache
+ * 
  * DEPENDENCIES:
  * - 01_Config.gs: CONFIG, CONTACT_COLS
  * - 06_SequenceData.gs: getAvailableSequences
  * 
- * @version 2.3
+ * @version 2.4 - Added contact caching for faster contextual trigger loading
  */
+
+/* ======================== CONTACT CACHE ======================== */
+
+// Cache configuration
+const CONTACT_CACHE_KEY = "RECENT_CONTACTS_CACHE";
+const CONTACT_CACHE_EXPIRY = 7200; // 2 hours in seconds
+
+/**
+ * Gets a contact from cache by email.
+ * @param {string} email - The email to look up
+ * @returns {Object|null} Contact object or null if not in cache
+ */
+function getContactFromCache(email) {
+  if (!email) return null;
+  
+  try {
+    const cache = CacheService.getUserCache();
+    const cachedData = cache.get(CONTACT_CACHE_KEY);
+    
+    if (!cachedData) return null;
+    
+    const contacts = JSON.parse(cachedData);
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    const contact = contacts.find(c => 
+      c.email && c.email.toLowerCase().trim() === normalizedEmail
+    );
+    
+    if (contact) {
+      console.log("Cache HIT for: " + email);
+      // Restore Date objects (JSON serialization converts them to strings)
+      if (contact.lastEmailDate) contact.lastEmailDate = new Date(contact.lastEmailDate);
+      if (contact.nextStepDate) contact.nextStepDate = new Date(contact.nextStepDate);
+      if (contact.replyDate) contact.replyDate = new Date(contact.replyDate);
+      // Recalculate isReady since it depends on current date
+      contact.isReady = isContactReadyForEmail(contact.nextStepDate);
+    }
+    
+    return contact || null;
+  } catch (error) {
+    console.error("Error reading from cache: " + error);
+    return null;
+  }
+}
+
+/**
+ * Updates a single contact in the cache.
+ * @param {Object} contact - The contact object to update
+ */
+function updateContactInCache(contact) {
+  if (!contact || !contact.email) return;
+  
+  try {
+    const cache = CacheService.getUserCache();
+    const cachedData = cache.get(CONTACT_CACHE_KEY);
+    
+    let contacts = [];
+    if (cachedData) {
+      contacts = JSON.parse(cachedData);
+    }
+    
+    const normalizedEmail = contact.email.toLowerCase().trim();
+    const existingIndex = contacts.findIndex(c => 
+      c.email && c.email.toLowerCase().trim() === normalizedEmail
+    );
+    
+    if (existingIndex >= 0) {
+      // Update existing
+      contacts[existingIndex] = contact;
+    } else {
+      // Add to beginning (most recent)
+      contacts.unshift(contact);
+      // Keep only last 50
+      if (contacts.length > 50) {
+        contacts = contacts.slice(0, 50);
+      }
+    }
+    
+    cache.put(CONTACT_CACHE_KEY, JSON.stringify(contacts), CONTACT_CACHE_EXPIRY);
+    console.log("Cache UPDATED for: " + contact.email);
+  } catch (error) {
+    console.error("Error updating cache: " + error);
+  }
+}
+
+/**
+ * Adds a new contact to the cache (alias for updateContactInCache).
+ * @param {Object} contact - The contact object to add
+ */
+function addContactToCache(contact) {
+  updateContactInCache(contact);
+}
+
+/**
+ * Removes a contact from the cache by email.
+ * @param {string} email - The email of the contact to remove
+ */
+function removeContactFromCache(email) {
+  if (!email) return;
+  
+  try {
+    const cache = CacheService.getUserCache();
+    const cachedData = cache.get(CONTACT_CACHE_KEY);
+    
+    if (!cachedData) return;
+    
+    let contacts = JSON.parse(cachedData);
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    contacts = contacts.filter(c => 
+      !c.email || c.email.toLowerCase().trim() !== normalizedEmail
+    );
+    
+    cache.put(CONTACT_CACHE_KEY, JSON.stringify(contacts), CONTACT_CACHE_EXPIRY);
+    console.log("Cache REMOVED: " + email);
+  } catch (error) {
+    console.error("Error removing from cache: " + error);
+  }
+}
+
+/**
+ * Clears the entire contact cache.
+ */
+function clearContactCache() {
+  try {
+    const cache = CacheService.getUserCache();
+    cache.remove(CONTACT_CACHE_KEY);
+    console.log("Contact cache cleared.");
+  } catch (error) {
+    console.error("Error clearing cache: " + error);
+  }
+}
+
+/**
+ * Pre-populates the cache with recent contacts.
+ * @param {number} limit - Maximum number of contacts to cache (default 50)
+ * @returns {number} Number of contacts cached
+ */
+function populateContactCache(limit = 50) {
+  try {
+    const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+    if (!spreadsheetId) return 0;
+    
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
+    
+    if (!contactsSheet) return 0;
+    
+    const lastRow = contactsSheet.getLastRow();
+    if (lastRow <= 1) return 0;
+    
+    // Get the most recent contacts (last N rows)
+    const startRow = Math.max(2, lastRow - limit + 1);
+    const numRows = lastRow - startRow + 1;
+    const numCols = Object.keys(CONTACT_COLS).length;
+    
+    const dataRange = contactsSheet.getRange(startRow, 1, numRows, numCols);
+    const dataValues = dataRange.getValues();
+    
+    const contacts = [];
+    for (let i = 0; i < dataValues.length; i++) {
+      const row = dataValues[i];
+      if (!row[CONTACT_COLS.EMAIL] && !row[CONTACT_COLS.FIRST_NAME]) {
+        continue;
+      }
+      
+      const isReady = isContactReadyForEmail(row[CONTACT_COLS.NEXT_STEP_DATE]);
+      
+      contacts.push({
+        firstName: row[CONTACT_COLS.FIRST_NAME] || "",
+        lastName: row[CONTACT_COLS.LAST_NAME] || "",
+        email: row[CONTACT_COLS.EMAIL] || "",
+        company: row[CONTACT_COLS.COMPANY] || "",
+        title: row[CONTACT_COLS.TITLE] || "",
+        currentStep: parseInt(row[CONTACT_COLS.CURRENT_STEP]) || 1,
+        lastEmailDate: row[CONTACT_COLS.LAST_EMAIL_DATE],
+        nextStepDate: row[CONTACT_COLS.NEXT_STEP_DATE],
+        status: row[CONTACT_COLS.STATUS] || "Active",
+        notes: row[CONTACT_COLS.NOTES] || "",
+        personalPhone: row[CONTACT_COLS.PERSONAL_PHONE] || "",
+        workPhone: row[CONTACT_COLS.WORK_PHONE] || "",
+        personalCalled: row[CONTACT_COLS.PERSONAL_CALLED] || "No",
+        workCalled: row[CONTACT_COLS.WORK_CALLED] || "No",
+        priority: row[CONTACT_COLS.PRIORITY] || "Medium",
+        tags: row[CONTACT_COLS.TAGS] || "",
+        sequence: row[CONTACT_COLS.SEQUENCE] || "",
+        industry: row[CONTACT_COLS.INDUSTRY] || "",
+        step1Subject: row[CONTACT_COLS.STEP1_SUBJECT] || "",
+        step1SentMessageId: row[CONTACT_COLS.STEP1_SENT_MESSAGE_ID] || "",
+        threadId: row[CONTACT_COLS.THREAD_ID] || "",
+        labeled: row[CONTACT_COLS.LABELED] || "No",
+        replyReceived: row[CONTACT_COLS.REPLY_RECEIVED] || "No",
+        replyDate: row[CONTACT_COLS.REPLY_DATE] || "",
+        rowIndex: startRow + i,
+        isReady: isReady
+      });
+    }
+    
+    // Store in cache (most recent first)
+    const cache = CacheService.getUserCache();
+    cache.put(CONTACT_CACHE_KEY, JSON.stringify(contacts.reverse()), CONTACT_CACHE_EXPIRY);
+    
+    console.log("Contact cache POPULATED with " + contacts.length + " contacts");
+    return contacts.length;
+  } catch (error) {
+    console.error("Error populating cache: " + error);
+    return 0;
+  }
+}
 
 /* ======================== CONTACT DATA RETRIEVAL ======================== */
 
@@ -143,6 +359,15 @@ function getContactByEmailFast(email, spreadsheetId) {
   
   const normalizedEmail = email.toLowerCase().trim();
   
+  // CHECK CACHE FIRST (fast path)
+  const cachedContact = getContactFromCache(normalizedEmail);
+  if (cachedContact) {
+    return cachedContact;
+  }
+  
+  // CACHE MISS - Fall back to TextFinder lookup
+  console.log("Cache MISS for: " + email + " - using TextFinder");
+  
   // Use provided spreadsheetId or fetch it
   const ssId = spreadsheetId || PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
   if (!ssId) return null;
@@ -168,7 +393,7 @@ function getContactByEmailFast(email, spreadsheetId) {
     // Build contact object
     const isReady = isContactReadyForEmail(rowData[CONTACT_COLS.NEXT_STEP_DATE]);
     
-    return {
+    const contact = {
       firstName: rowData[CONTACT_COLS.FIRST_NAME] || "",
       lastName: rowData[CONTACT_COLS.LAST_NAME] || "",
       email: rowData[CONTACT_COLS.EMAIL] || "",
@@ -196,6 +421,11 @@ function getContactByEmailFast(email, spreadsheetId) {
       rowIndex: rowIndex,
       isReady: isReady
     };
+    
+    // Add to cache for future lookups
+    addContactToCache(contact);
+    
+    return contact;
   } catch (error) {
     console.error("Error in getContactByEmailFast: " + error);
     return null;

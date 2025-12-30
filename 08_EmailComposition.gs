@@ -313,7 +313,11 @@ function composeEmailWithTemplate(e) {
         rowData[CONTACT_COLS.STEP1_SUBJECT] = subjectForStep1Storage; 
     }
     rowRange.setValues([rowData]);
-    SpreadsheetApp.flush(); 
+    SpreadsheetApp.flush();
+    
+    // Invalidate cache since contact step/status changed
+    removeContactFromCache(contact.email);
+    
     logAction("Email Processed", `${actionVerbPast} for Step ${currentStep} for ${contact.email}. Moved to Step ${nextStepVal}.`);
   } catch (sheetError) {
     logAction("Error", `Sheet Update Failed for ${email} after email action: ${sheetError}`);

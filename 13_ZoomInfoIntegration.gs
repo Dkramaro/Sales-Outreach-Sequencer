@@ -962,6 +962,11 @@ safeAssign(CONTACT_COLS.CONNECT_SALES_LINK, connectSalesLinkFormula);
 
 contactsSheet.appendRow(newRow);
 
+// Add to cache for fast future lookups
+if (typeof addContactToCache === "function") {
+    addContactToCache(contact);
+}
+
 if (typeof logAction === "function") {
     logAction("ZoomInfo Import", `Imported contact: ${contact.firstName} ${contact.lastName} (${contact.email})`);
 } else {

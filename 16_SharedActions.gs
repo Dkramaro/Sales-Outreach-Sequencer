@@ -89,6 +89,7 @@ function markContactCompleted(e) {
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.PERSONAL_CALLED + 1).setValue("No");
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.WORK_CALLED + 1).setValue("No");
     SpreadsheetApp.flush();
+    removeContactFromCache(email);
 
     logAction("Contact Completed", `Marked contact ${contact.firstName} ${contact.lastName} (${email}) as Completed.`);
 
@@ -205,6 +206,7 @@ function endSequenceForCompany(e) {
             
             singleRowRange.setValues([singleRowData]);
             SpreadsheetApp.flush();
+            removeContactFromCache(currentContactEmail);
             logAction("End Sequence (Single/NoCompany)", `Sequence ended for ${currentContactEmail}.`);
             
             const updatedCardView = viewContactCard({ parameters: { email: currentContactEmail } });
@@ -282,6 +284,8 @@ function endSequenceForCompany(e) {
 
         if (updatedCount > 0) {
             SpreadsheetApp.flush();
+            // Clear entire cache since multiple contacts were updated
+            clearContactCache();
             logAction("End Sequence (Company)", `Processed ${updatedCount} contacts for company "${companyName}".`);
         }
 

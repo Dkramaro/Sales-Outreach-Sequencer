@@ -697,6 +697,7 @@ function recordCallOutcome(e) {
 
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.NOTES + 1).setValue(newNotes);
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("Call Outcome", `Recorded "${outcome}" for ${contact.firstName} ${contact.lastName}`);
 
@@ -773,6 +774,7 @@ function recordCallOutcomeAndComplete(e) {
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.COMPLETION_DATE + 1).setValue(completionDate);
     
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("Spoke/Complete", `${contact.firstName} ${contact.lastName} - marked complete`);
 
@@ -849,6 +851,7 @@ function recordCallOutcomeAndUnsubscribe(e) {
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.COMPLETION_DATE + 1).setValue(completionDate);
     
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("No Interest", `${contact.firstName} ${contact.lastName} - marked Unsubscribed`);
 
@@ -946,6 +949,7 @@ function endSequenceFocus(e) {
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.COMPLETION_DATE + 1).setValue(completionDate);
     
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("Sequence Ended", `${contact.firstName} ${contact.lastName} - sequence ended from Focus Mode`);
 
@@ -997,6 +1001,7 @@ function markPhoneNumberCalledFocus(e) {
     const columnToUpdate = (phoneType === "personal") ? CONTACT_COLS.PERSONAL_CALLED + 1 : CONTACT_COLS.WORK_CALLED + 1;
     contactsSheet.getRange(contact.rowIndex, columnToUpdate).setValue("Yes");
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("Phone Call", `Marked ${phoneType} phone called for ${contact.firstName} ${contact.lastName}`);
 
@@ -1075,6 +1080,7 @@ function saveCallNoteFocus(e) {
 
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.NOTES + 1).setValue(newNotes);
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("Call Note", `Saved notes for ${contact.firstName} ${contact.lastName}`);
 
@@ -1162,6 +1168,7 @@ function saveCallNote(e) {
 
     contactsSheet.getRange(contact.rowIndex, CONTACT_COLS.NOTES + 1).setValue(newNotes);
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     logAction("Call Note Saved", `Saved call note for ${contact.firstName} ${contact.lastName} (${email}).`);
 
@@ -1227,6 +1234,7 @@ function saveNoteKeepCadence(e) {
     }
     
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     const updatedCard = buildMultiContactView({ parameters: { page: page, focusMode: "false" } });
     return CardService.newActionResponseBuilder()
@@ -1321,6 +1329,7 @@ function markPhoneNumberCalled(e) {
     const columnToUpdate = (phoneType === "personal") ? CONTACT_COLS.PERSONAL_CALLED + 1 : CONTACT_COLS.WORK_CALLED + 1;
     contactsSheet.getRange(contact.rowIndex, columnToUpdate).setValue("Yes");
     SpreadsheetApp.flush();
+    removeContactFromCache(contact.email);
 
     const updatedContactData = getContactByEmail(email);
     const personalDone = formatPhoneNumberForDisplay(updatedContactData.personalPhone) === "N/A" || updatedContactData.personalCalled === "Yes";
