@@ -651,18 +651,23 @@ function viewContactsReadyForEmail(e) {
       const contactsByStep = groupContactsByStep(contactsToShow);
       const sortedSteps = Object.keys(contactsByStep).sort((a, b) => parseInt(a) - parseInt(b));
       
+      // Check if wizard is completed - only show step headers in main dashboard, not during onboarding
+      const showStepHeaders = !isAllDemoContacts && !isDemoMode;
+      
       for (const stepNum of sortedSteps) {
         const stepContacts = contactsByStep[stepNum];
         const step = parseInt(stepNum);
         const stepType = step === 1 ? "First Emails" : `Follow-up #${step - 1}`;
         
-        // Enhanced step header with visual prominence
-        contactsSection.addWidget(CardService.newDivider());
-        contactsSection.addWidget(CardService.newDecoratedText()
-            .setTopLabel(`━━━━━━━━━━ STEP ${step} ━━━━━━━━━`)
-            .setText(`<b>📮 ${stepType}</b>`)
-            .setBottomLabel(`${stepContacts.length} contact${stepContacts.length === 1 ? '' : 's'} ready to send`)
-            .setWrapText(true));
+        // Step header - only show in main dashboard, hidden during onboarding wizard
+        if (showStepHeaders) {
+          contactsSection.addWidget(CardService.newDivider());
+          contactsSection.addWidget(CardService.newDecoratedText()
+              .setTopLabel(`━━━━━━━━━━ STEP ${step} ━━━━━━━━━`)
+              .setText(`<b>📮 ${stepType}</b>`)
+              .setBottomLabel(`${stepContacts.length} contact${stepContacts.length === 1 ? '' : 's'} ready to send`)
+              .setWrapText(true));
+        }
         
         // Group contacts by company within each step for better organization
         const companiesInStep = {};
