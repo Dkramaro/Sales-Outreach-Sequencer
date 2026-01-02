@@ -284,67 +284,65 @@ function applyStatusFilter(e) {
 function displayContactWithSelectionGrouped(section, contact, isChecked, originDetails, prefix = "") {
   const lastEmailDate = formatDate(contact.lastEmailDate);
   
-  // Status indicator
-  let statusIcon = contact.status === "Active" && contact.isReady ? "✅" : 
-                   contact.status === "Active" ? "⏱️" : 
+  // Status indicator - only show if not ready or paused
+  let statusIcon = contact.status === "Active" && !contact.isReady ? "⏱️" : 
                    contact.status === "Paused" ? "⏸️" : "";
 
   // Priority indicator
   let priorityIcon = contact.priority === "High" ? "🔥" : 
                      contact.priority === "Medium" ? "🟠" : "⚪";
 
-  // Build rich checkbox title: icons + name + sequence
-  let checkboxTitle = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
-  if (contact.sequence && contact.sequence.trim()) {
-    checkboxTitle += " · " + contact.sequence;
+  // Build checkbox display: priority + status + name + job title (this is now the MAIN focal point)
+  let nameDisplay = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
+  if (contact.title && contact.title.trim()) {
+    nameDisplay += " · " + contact.title;
   }
 
-  // Checkbox with email as the item
+  // Checkbox with NAME+TITLE as display text, EMAIL as value (preserves selection functionality)
+  // CRITICAL: fieldName and value must stay as email-based for selection logic to work
   section.addWidget(CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
-      .setTitle(checkboxTitle)
+      .setTitle("")
       .setFieldName("contact_" + contact.email.replace(/[@\\.+-]/g, "_"))
-      .addItem(contact.email, contact.email, isChecked));
+      .addItem(nameDisplay, contact.email, isChecked));
 
-  // Rich metadata - organized in multiple lines for clarity
-  // Line 1: Job title
-  let line1Parts = [];
-  if (contact.title && contact.title.trim()) line1Parts.push("💼 " + contact.title);
+  // Determine if we're in a "ready only" view (ready status is implicit, don't show it)
+  const isReadyOnlyView = originDetails.type === 'readyView' || 
+                          (originDetails.viewParams && originDetails.viewParams.statusFilter === 'ready');
+
+  // Build bottomLabel: sequence + metadata (date, ready status if applicable, industry, tags)
+  let bottomParts = [];
   
-  // Line 2: Last email date + ready status + industry
-  let line2Parts = [];
+  // Sequence first: "Name Sequence" format
+  if (contact.sequence && contact.sequence.trim()) {
+    bottomParts.push(contact.sequence + " Sequence");
+  }
+  
+  // Date
   if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") {
-    line2Parts.push("📅 " + lastEmailDate);
+    bottomParts.push("📅 " + lastEmailDate);
   } else {
-    line2Parts.push("📅 Never emailed");
-  }
-  if (contact.isReady) {
-    line2Parts.push("⏰ Ready now");
-  }
-  if (contact.industry && contact.industry.trim()) line2Parts.push(contact.industry);
-  
-  // Line 3: Tags
-  let line3Parts = [];
-  if (contact.tags && contact.tags.trim()) line3Parts.push("🏷️ " + contact.tags);
-  
-  // Build metadata display
-  let metadataText = "";
-  if (line1Parts.length > 0) {
-    metadataText += line1Parts.join(" · ");
-  }
-  if (line2Parts.length > 0) {
-    if (metadataText) metadataText += "<br>";
-    metadataText += "<font color='#5f6368'>" + line2Parts.join(" · ") + "</font>";
-  }
-  if (line3Parts.length > 0) {
-    if (metadataText) metadataText += "<br>";
-    metadataText += "<font color='#5f6368'>" + line3Parts.join(" · ") + "</font>";
+    bottomParts.push("📅 Never emailed");
   }
   
-  // Only show info if there's metadata
-  if (metadataText) {
-    section.addWidget(CardService.newTextParagraph().setText(metadataText));
+  // Ready status: only show when viewing ALL contacts (not ready-only view)
+  // In ready-only views, everyone is ready so it's implicit
+  // In all-contacts views, show "Not ready" for non-ready contacts
+  if (!isReadyOnlyView && !contact.isReady) {
+    bottomParts.push("⏱️ Not ready");
   }
+  
+  if (contact.industry && contact.industry.trim()) bottomParts.push(contact.industry);
+  if (contact.tags && contact.tags.trim()) bottomParts.push("🏷️ " + contact.tags);
+  
+  const bottomLabelText = bottomParts.join(" · ");
+  
+  // DecoratedText: email (main text/same weight), sequence+metadata (bottomLabel/smaller)
+  const metadataWidget = CardService.newDecoratedText()
+      .setText(contact.email)
+      .setBottomLabel(bottomLabelText)
+      .setWrapText(true);
+  section.addWidget(metadataWidget);
 
   // Compact action buttons with view contact link
   const linkedInSearchUrl = createLinkedInSearchUrl(contact);
@@ -391,61 +389,62 @@ function displayContactWithSelectionGrouped(section, contact, isChecked, originD
 function displayContactWithSelection(section, contact, isChecked, originDetails) {
   const lastEmailDate = formatDate(contact.lastEmailDate);
   
-  // Status & Priority indicators
-  let statusIcon = contact.status === "Active" && contact.isReady ? "✅" : 
-                   contact.status === "Active" ? "⏱️" : 
+  // Status & Priority indicators - only show if not ready or paused
+  let statusIcon = contact.status === "Active" && !contact.isReady ? "⏱️" : 
                    contact.status === "Paused" ? "⏸️" : "";
   let priorityIcon = contact.priority === "High" ? "🔥" : 
                      contact.priority === "Medium" ? "🟠" : "⚪";
 
-  // Checkbox title: icons + name
-  let checkboxTitle = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
+  // Build checkbox display: priority + status + name + job title (this is now the MAIN focal point)
+  let nameDisplay = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
+  if (contact.title && contact.title.trim()) {
+    nameDisplay += " · " + contact.title;
+  }
 
+  // Checkbox with NAME+TITLE as display text, EMAIL as value (preserves selection functionality)
+  // CRITICAL: fieldName and value must stay as email-based for selection logic to work
   section.addWidget(CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
-      .setTitle(checkboxTitle)
+      .setTitle("")
       .setFieldName("contact_" + contact.email.replace(/[@\\.+-]/g, "_"))
-      .addItem(contact.email, contact.email, isChecked));
+      .addItem(nameDisplay, contact.email, isChecked));
 
-  // Rich metadata - organized clearly
-  // Line 1: Company, step, sequence
-  let line1Parts = [];
-  if (contact.company && contact.company.trim()) line1Parts.push("🏢 " + contact.company);
-  line1Parts.push("Step " + contact.currentStep);
-  if (contact.sequence && contact.sequence.trim()) line1Parts.push(contact.sequence);
+  // Determine if we're in a "ready only" view (ready status is implicit, don't show it)
+  const isReadyOnlyView = originDetails.type === 'readyView' || 
+                          (originDetails.viewParams && originDetails.viewParams.statusFilter === 'ready');
+
+  // Build company/step/sequence info for main text
+  let contextParts = [];
+  if (contact.company && contact.company.trim()) contextParts.push("🏢 " + contact.company);
+  contextParts.push("Step " + contact.currentStep);
+  if (contact.sequence && contact.sequence.trim()) contextParts.push(contact.sequence);
+  const contextText = contextParts.join(" · ");
   
-  // Line 2: Job title
-  let line2Parts = [];
-  if (contact.title && contact.title.trim()) line2Parts.push("💼 " + contact.title);
-  
-  // Line 3: Date, ready status, industry
-  let line3Parts = [];
+  // Secondary info for bottomLabel (date, ready status if applicable, industry, tags)
+  let secondaryParts = [];
   if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") {
-    line3Parts.push("📅 " + lastEmailDate);
+    secondaryParts.push("📅 " + lastEmailDate);
   } else {
-    line3Parts.push("📅 Never emailed");
+    secondaryParts.push("📅 Never emailed");
   }
-  if (contact.isReady) {
-    line3Parts.push("⏰ Ready now");
-  }
-  if (contact.industry && contact.industry.trim()) line3Parts.push(contact.industry);
   
-  // Line 4: Tags
-  let line4Parts = [];
-  if (contact.tags && contact.tags.trim()) line4Parts.push("🏷️ " + contact.tags);
-
-  // Build metadata display
-  let infoText = "<b>" + line1Parts.join(" · ") + "</b>";
-  if (line2Parts.length > 0) {
-    infoText += "<br>" + line2Parts.join(" · ");
+  // Ready status: only show when viewing ALL contacts (not ready-only view)
+  if (!isReadyOnlyView && !contact.isReady) {
+    secondaryParts.push("⏱️ Not ready");
   }
-  if (line3Parts.length > 0) {
-    infoText += "<br><font color='#5f6368'>" + line3Parts.join(" · ") + "</font>";
-  }
-  if (line4Parts.length > 0) {
-    infoText += "<br><font color='#5f6368'>" + line4Parts.join(" · ") + "</font>";
-  }
-  section.addWidget(CardService.newTextParagraph().setText(infoText));
+  
+  if (contact.industry && contact.industry.trim()) secondaryParts.push(contact.industry);
+  if (contact.tags && contact.tags.trim()) secondaryParts.push("🏷️ " + contact.tags);
+  
+  const bottomLabelText = secondaryParts.join(" · ");
+  
+  // DecoratedText: email (topLabel/smaller), company+step+sequence (main text), metadata (bottomLabel/smaller)
+  const metadataWidget = CardService.newDecoratedText()
+      .setTopLabel(contact.email)
+      .setText(contextText)
+      .setBottomLabel(bottomLabelText)
+      .setWrapText(true);
+  section.addWidget(metadataWidget);
 
   // Action buttons
   const linkedInSearchUrl = createLinkedInSearchUrl(contact);

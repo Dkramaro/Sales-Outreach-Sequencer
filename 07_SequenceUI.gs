@@ -334,7 +334,7 @@ function buildSelectContactsCard(e) {
             // Prominent company header with DecoratedText for better visual separation
             contactsSection.addWidget(CardService.newDivider());
             contactsSection.addWidget(CardService.newDecoratedText()
-                .setTopLabel("─────────────────────────────────────────")
+                .setTopLabel("────────────────────────────────")
                 .setText(`<b>🏢 ${displayCompanyName.toUpperCase()}</b>`)
                 .setBottomLabel(`${companyContacts.length} contact${companyContacts.length === 1 ? '' : 's'}`)
                 .setWrapText(true));
@@ -503,7 +503,7 @@ function viewStep2Contacts(e) {
             // Prominent company header with DecoratedText for better visual separation
             contactsSection.addWidget(CardService.newDivider());
             contactsSection.addWidget(CardService.newDecoratedText()
-                .setTopLabel("─────────────────────────────────────────")
+                .setTopLabel("────────────────────────────────")
                 .setText(`<b>🏢 ${displayCompanyName.toUpperCase()}</b>`)
                 .setBottomLabel(`${companyContacts.length} contact${companyContacts.length === 1 ? '' : 's'}`)
                 .setWrapText(true));
@@ -659,7 +659,7 @@ function viewContactsReadyForEmail(e) {
         // Enhanced step header with visual prominence
         contactsSection.addWidget(CardService.newDivider());
         contactsSection.addWidget(CardService.newDecoratedText()
-            .setTopLabel(`━━━ STEP ${step} ━━━`)
+            .setTopLabel(`━━━━━━━━━━ STEP ${step} ━━━━━━━━━`)
             .setText(`<b>📮 ${stepType}</b>`)
             .setBottomLabel(`${stepContacts.length} contact${stepContacts.length === 1 ? '' : 's'} ready to send`)
             .setWrapText(true));
@@ -678,7 +678,7 @@ function viewContactsReadyForEmail(e) {
         for (const [companyName, companyContacts] of Object.entries(companiesInStep)) {
           // Prominent company header with DecoratedText for better visual separation
           contactsSection.addWidget(CardService.newDecoratedText()
-              .setTopLabel("─────────────────────────────────────────")
+              .setTopLabel("────────────────────────────────")
               .setText(`<b>🏢 ${companyName.toUpperCase()}</b>`)
               .setBottomLabel(`${companyContacts.length} contact${companyContacts.length === 1 ? '' : 's'}`)
               .setWrapText(true));
@@ -760,65 +760,65 @@ function groupContactsByStep(contacts) {
 function displayContactWithSelectionSimplified(section, contact, isChecked, originDetails) {
   const lastEmailDate = formatDate(contact.lastEmailDate);
   
-  // Status indicator
-  let statusIcon = contact.status === "Active" && contact.isReady ? "✅" : 
-                   contact.status === "Active" ? "⏱️" : 
+  // Status indicator - only show if not ready or paused
+  let statusIcon = contact.status === "Active" && !contact.isReady ? "⏱️" : 
                    contact.status === "Paused" ? "⏸️" : "";
 
   // Priority indicator
   let priorityIcon = contact.priority === "High" ? "🔥" : 
                      contact.priority === "Medium" ? "🟠" : "⚪";
 
-  // Checkbox title: priority + status + name + sequence
-  let checkboxTitle = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
-  if (contact.sequence && contact.sequence.trim()) {
-    checkboxTitle += " · " + contact.sequence;
+  // Build checkbox display: priority + status + name + job title (this is now the MAIN focal point)
+  let nameDisplay = priorityIcon + statusIcon + " " + contact.firstName + " " + contact.lastName;
+  if (contact.title && contact.title.trim()) {
+    nameDisplay += " · " + contact.title;
   }
 
+  // Checkbox with NAME+TITLE as display text, EMAIL as value (preserves selection functionality)
+  // CRITICAL: fieldName and value must stay as email-based for selection logic to work
   section.addWidget(CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
-      .setTitle(checkboxTitle)
+      .setTitle("")
       .setFieldName("contact_" + contact.email.replace(/[@\\.+-]/g, "_"))
-      .addItem(contact.email, contact.email, isChecked));
+      .addItem(nameDisplay, contact.email, isChecked));
 
-  // Rich metadata - show all relevant info
-  // Line 1: Job title
-  let line1Parts = [];
-  if (contact.title && contact.title.trim()) line1Parts.push("💼 " + contact.title);
+  // Determine if we're in a "ready only" view (ready status is implicit, don't show it)
+  const isReadyOnlyView = originDetails.type === 'readyView' || 
+                          (originDetails.viewParams && originDetails.viewParams.statusFilter === 'ready');
+
+  // Build bottomLabel: sequence + metadata (date, ready status if applicable, industry, tags)
+  let bottomParts = [];
   
-  // Line 2: Last email date + ready status + industry
-  let line2Parts = [];
+  // Sequence first: "Name Sequence" format
+  if (contact.sequence && contact.sequence.trim()) {
+    bottomParts.push(contact.sequence + " Sequence");
+  }
+  
+  // Date
   if (lastEmailDate && lastEmailDate !== "Never" && lastEmailDate !== "N/A") {
-    line2Parts.push("📅 " + lastEmailDate);
+    bottomParts.push("📅 " + lastEmailDate);
   } else {
-    line2Parts.push("📅 Never emailed");
-  }
-  if (contact.isReady) {
-    line2Parts.push("⏰ Ready now");
-  }
-  if (contact.industry && contact.industry.trim()) line2Parts.push(contact.industry);
-  
-  // Line 3: Tags
-  let line3Parts = [];
-  if (contact.tags && contact.tags.trim()) line3Parts.push("🏷️ " + contact.tags);
-  
-  // Build metadata display
-  let metadataText = "";
-  if (line1Parts.length > 0) {
-    metadataText += line1Parts.join(" · ");
-  }
-  if (line2Parts.length > 0) {
-    if (metadataText) metadataText += "<br>";
-    metadataText += "<font color='#5f6368'>" + line2Parts.join(" · ") + "</font>";
-  }
-  if (line3Parts.length > 0) {
-    if (metadataText) metadataText += "<br>";
-    metadataText += "<font color='#5f6368'>" + line3Parts.join(" · ") + "</font>";
+    bottomParts.push("📅 Never emailed");
   }
   
-  if (metadataText) {
-    section.addWidget(CardService.newTextParagraph().setText(metadataText));
+  // Ready status: only show when viewing ALL contacts (not ready-only view)
+  // In ready-only views, everyone is ready so it's implicit
+  // In all-contacts views, show "Not ready" for non-ready contacts
+  if (!isReadyOnlyView && !contact.isReady) {
+    bottomParts.push("⏱️ Not ready");
   }
+  
+  if (contact.industry && contact.industry.trim()) bottomParts.push(contact.industry);
+  if (contact.tags && contact.tags.trim()) bottomParts.push("🏷️ " + contact.tags);
+  
+  const bottomLabelText = bottomParts.join(" · ");
+  
+  // DecoratedText: email (main text/same weight), sequence+metadata (bottomLabel/smaller)
+  const metadataWidget = CardService.newDecoratedText()
+      .setText(contact.email)
+      .setBottomLabel(bottomLabelText)
+      .setWrapText(true);
+  section.addWidget(metadataWidget);
 
   // Action buttons
   const linkedInSearchUrl = createLinkedInSearchUrl(contact);
