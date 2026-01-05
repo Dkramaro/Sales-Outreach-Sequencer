@@ -106,7 +106,11 @@ function buildSettingsCard() {
               .setOpenLink(CardService.newOpenLink()
                   .setUrl("https://docs.google.com/document/d/" + signatureDocId + "/edit")))
           .addButton(CardService.newTextButton()
-              .setText("🔄 New")
+              .setText("🔄 Refresh")
+              .setOnClickAction(CardService.newAction()
+                  .setFunctionName("refreshSignatureCache")))
+          .addButton(CardService.newTextButton()
+              .setText("📝 New")
               .setOnClickAction(CardService.newAction()
                   .setFunctionName("createSignatureDoc"))));
       
@@ -404,25 +408,32 @@ function createSignatureDoc() {
     });
     
     // Style info column cells (second column)
+    // Set width so table ends at page midpoint (~306pt total, minus 80pt for logo = 220pt)
+    const infoColumnWidth = 220;
+    
     // Name cell - larger, bold
     nameCell.editAsText().setBold(true).setFontSize(12).setForegroundColor("#000000");
     nameCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
     nameCell.setPaddingLeft(10);
+    nameCell.setWidth(infoColumnWidth);
     
     // Title cell - medium
     titleCell.editAsText().setFontSize(10).setForegroundColor("#333333");
     titleCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
     titleCell.setPaddingLeft(10);
+    titleCell.setWidth(infoColumnWidth);
     
     // Email cell - medium
     emailCell.editAsText().setFontSize(10).setForegroundColor("#0066cc");
     emailCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
     emailCell.setPaddingLeft(10);
+    emailCell.setWidth(infoColumnWidth);
     
     // Phone cell - medium
     phoneCell.editAsText().setFontSize(10).setForegroundColor("#333333");
     phoneCell.setVerticalAlignment(DocumentApp.VerticalAlignment.CENTER);
     phoneCell.setPaddingLeft(10);
+    phoneCell.setWidth(infoColumnWidth);
     
     // Add bottom instructions
     body.appendParagraph(" "); // Spacing
@@ -438,10 +449,10 @@ function createSignatureDoc() {
     // Save the document
     doc.saveAndClose();
     
-    // Store the doc ID and enable signature by default
+    // Store the doc ID but don't enable signature yet (user must toggle on after customizing)
     const userProps = PropertiesService.getUserProperties();
     userProps.setProperty("SIGNATURE_DOC_ID", docId);
-    userProps.setProperty("SIGNATURE_ENABLED", "true");
+    userProps.setProperty("SIGNATURE_ENABLED", "false");
     
     // Log the action
     logAction("Signature Setup", `Created signature document with table format: ${docId}`);
@@ -465,22 +476,98 @@ function createSignatureDoc() {
 
 /**
 * Auto-saves the Signature toggle when changed.
+* When enabling, processes signature images by uploading to Drive.
 * Provides instant feedback without requiring manual save.
 */
 function autoSaveSignatureToggle(e) {
   const formInput = e.formInput || {};
   const signatureEnabled = formInput.signatureEnabled === "true";
-  
   const userProps = PropertiesService.getUserProperties();
-  userProps.setProperty("SIGNATURE_ENABLED", signatureEnabled.toString());
   
-  const statusText = signatureEnabled ? "ON" : "OFF";
-  logAction("Toggle Setting", `Signature: ${statusText}`);
+  if (signatureEnabled) {
+    // User is enabling signature - process images
+    try {
+      const result = processSignatureImages();
+      
+      if (!result.success) {
+        // Processing failed - don't enable signature
+        userProps.setProperty("SIGNATURE_ENABLED", "false");
+        logAction("Warning", "Signature not enabled - processing failed: " + result.error);
+        return CardService.newActionResponseBuilder()
+            .setNotification(CardService.newNotification()
+                .setText(`⚠️ Could not process signature: ${result.error}`))
+            .setNavigation(CardService.newNavigation()
+                .updateCard(buildSettingsCard()))
+            .build();
+      }
+      
+      // Success - enable signature
+      userProps.setProperty("SIGNATURE_ENABLED", "true");
+      logAction("Toggle Setting", `Signature: ON (${result.sizeKB.toFixed(0)} KB)`);
+      
+      return CardService.newActionResponseBuilder()
+          .setNotification(CardService.newNotification()
+              .setText(`✓ Signature ON (${result.sizeKB.toFixed(0)} KB)`))
+          .build();
+          
+    } catch (error) {
+      console.error("Error processing signature: " + error);
+      logAction("Error", "Failed to process signature: " + error.toString());
+      userProps.setProperty("SIGNATURE_ENABLED", "false");
+      return CardService.newActionResponseBuilder()
+          .setNotification(CardService.newNotification()
+              .setText(`⚠️ Signature processing failed. Check your signature document.`))
+          .setNavigation(CardService.newNavigation()
+              .updateCard(buildSettingsCard()))
+          .build();
+    }
+  } else {
+    // User is disabling signature
+    userProps.setProperty("SIGNATURE_ENABLED", "false");
+    // Clear the cache
+    userProps.deleteProperty("SIGNATURE_PROCESSED_CACHE");
+    logAction("Toggle Setting", `Signature: OFF`);
+    
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification()
+            .setText(`✓ Signature OFF`))
+        .build();
+  }
+}
+
+/**
+ * Refreshes the signature cache by re-processing images from the Google Doc.
+ * Call this after editing your signature document.
+ */
+function refreshSignatureCache() {
+  const userProps = PropertiesService.getUserProperties();
+  const signatureEnabled = userProps.getProperty("SIGNATURE_ENABLED") === 'true';
   
-  return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification()
-          .setText(`✓ Signature ${statusText}`))
-      .build();
+  try {
+    const result = processSignatureImages();
+    
+    if (!result.success) {
+      logAction("Warning", "Signature refresh failed: " + result.error);
+      return CardService.newActionResponseBuilder()
+          .setNotification(CardService.newNotification()
+              .setText(`⚠️ ${result.error}`))
+          .build();
+    }
+    
+    logAction("Signature Refresh", `Refreshed signature (${result.sizeKB.toFixed(0)} KB)`);
+    
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification()
+            .setText(`✓ Signature refreshed (${result.sizeKB.toFixed(0)} KB)`))
+        .build();
+        
+  } catch (error) {
+    console.error("Error refreshing signature: " + error);
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification()
+            .setText(`⚠️ Error: ${error.message}`))
+        .build();
+  }
 }
 
 /**

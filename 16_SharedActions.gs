@@ -7,6 +7,7 @@
  * 
  * KEY FUNCTIONS:
  * - markContactCompleted() - Mark contact as completed from any view
+ * - endSequenceForContact() - End sequence for an individual contact
  * - endSequenceForCompany() - End sequence for all contacts in a company
  * 
  * DEPENDENCIES:
@@ -141,6 +142,80 @@ function markContactCompleted(e) {
       .setNavigation(CardService.newNavigation().updateCard(fallbackCard))
       .build();
   }
+}
+
+/* ======================== END SEQUENCE FOR INDIVIDUAL CONTACT ======================== */
+
+/**
+ * Ends the sequence for a single contact (by their name/email).
+ * Sets status to "Completed", clears Next Step Date, and resets call flags.
+ */
+function endSequenceForContact(e) {
+    const contactEmail = e.parameters.email;
+
+    if (!contactEmail) {
+        logAction("Error", "endSequenceForContact: Contact email parameter missing.");
+        return createNotification("Critical error: Contact email not provided.");
+    }
+
+    const spreadsheetId = PropertiesService.getUserProperties().getProperty("SPREADSHEET_ID");
+    if (!spreadsheetId) {
+        logAction("Error", "endSequenceForContact: No database connected.");
+        return createNotification("No database connected. Please connect to a database first.");
+    }
+
+    try {
+        const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+        const contactsSheet = spreadsheet.getSheetByName(CONFIG.CONTACTS_SHEET_NAME);
+        if (!contactsSheet) {
+            logAction("Error", "endSequenceForContact: Contacts sheet not found.");
+            return createNotification("Contacts sheet not found. Please refresh.");
+        }
+
+        const contact = getContactByEmail(contactEmail);
+        if (!contact) {
+            logAction("Error", `endSequenceForContact: Contact ${contactEmail} not found.`);
+            return createNotification(`Contact ${contactEmail} not found. Cannot proceed.`);
+        }
+
+        // Check if already completed
+        if (contact.status === "Completed") {
+            return CardService.newActionResponseBuilder()
+                .setNotification(CardService.newNotification().setText(`${contact.firstName} ${contact.lastName} is already marked as Completed.`))
+                .setNavigation(CardService.newNavigation().updateCard(viewContactCard({ parameters: { email: contactEmail } })))
+                .build();
+        }
+
+        // Update the contact's status
+        const rowRange = contactsSheet.getRange(contact.rowIndex, 1, 1, contactsSheet.getLastColumn());
+        const rowData = rowRange.getValues()[0];
+
+        rowData[CONTACT_COLS.STATUS] = "Completed";
+        rowData[CONTACT_COLS.NEXT_STEP_DATE] = "";
+        rowData[CONTACT_COLS.PERSONAL_CALLED] = "No";
+        rowData[CONTACT_COLS.WORK_CALLED] = "No";
+
+        rowRange.setValues([rowData]);
+        SpreadsheetApp.flush();
+        removeContactFromCache(contactEmail);
+
+        logAction("End Sequence (Contact)", `Sequence ended for ${contact.firstName} ${contact.lastName} (${contactEmail}).`);
+
+        const refreshedCard = viewContactCard({ parameters: { email: contactEmail } });
+        return CardService.newActionResponseBuilder()
+            .setNotification(CardService.newNotification().setText(`Sequence ended for ${contact.firstName} ${contact.lastName}.`))
+            .setNavigation(CardService.newNavigation().updateCard(refreshedCard))
+            .build();
+
+    } catch (error) {
+        console.error(`Error in endSequenceForContact: ${error}\n${error.stack}`);
+        logAction("Error", `endSequenceForContact (${contactEmail}): ${error.toString()}`);
+        const errorFallbackCard = viewContactCard({ parameters: { email: contactEmail } });
+        return CardService.newActionResponseBuilder()
+            .setNotification(CardService.newNotification().setText("Error ending sequence: " + error.message))
+            .setNavigation(CardService.newNavigation().updateCard(errorFallbackCard))
+            .build();
+    }
 }
 
 /* ======================== END SEQUENCE FOR COMPANY ======================== */

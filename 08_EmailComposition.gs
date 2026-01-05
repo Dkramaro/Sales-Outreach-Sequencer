@@ -431,9 +431,10 @@ function replacePlaceholders(text, contact, senderInfoOverride) {
 /* ======================== SIGNATURE INTEGRATION ======================== */
 
 /**
- * Fetches the content of a Google Doc as HTML using the Drive API.
- * This is used to retrieve a fully-formatted email signature.
- * @returns {string|null} The HTML content of the signature doc, or null if not configured/enabled or an error occurs.
+ * Fetches the processed signature HTML from cache.
+ * Returns cached signature instantly - no auto-processing.
+ * User must click Refresh button after editing their signature.
+ * @returns {string|null} The processed signature HTML, or null if not configured/enabled.
  */
 function getSignatureHtml() {
   const userProps = PropertiesService.getUserProperties();
@@ -442,36 +443,198 @@ function getSignatureHtml() {
   
   // Check if signature is enabled and configured
   if (!signatureEnabled || !docId) {
-    return null; // Signature is disabled or not configured, return null gracefully.
+    return null;
+  }
+
+  // Return cached processed signature (stored in UserProperties for persistence)
+  const cachedSignature = userProps.getProperty("SIGNATURE_PROCESSED_CACHE");
+  if (cachedSignature) {
+    return cachedSignature;
+  }
+  
+  // No cache - signature was enabled but not processed yet
+  console.warn("Signature enabled but not processed. User should click Refresh.");
+  return null;
+}
+
+/**
+ * Processes signature by converting embedded base64 images to Drive-hosted URLs.
+ * Creates a folder "SoS Signature Images" to store the images.
+ * Caches the processed signature for fast retrieval.
+ * @returns {object} {success: boolean, html: string|null, error: string|null, sizeKB: number}
+ */
+function processSignatureImages() {
+  const userProps = PropertiesService.getUserProperties();
+  const docId = userProps.getProperty("SIGNATURE_DOC_ID");
+  const SIGNATURE_FOLDER_NAME = "SoS Signature Images";
+  
+  if (!docId) {
+    return { success: false, html: null, error: "No signature document configured", sizeKB: 0 };
   }
 
   try {
-    // The Drive API v2 provides a direct export link.
-    // Ensure "Drive API" advanced service is enabled in the Apps Script editor.
+    // Fetch fresh signature HTML from Google Doc
     const url = "https://www.googleapis.com/drive/v2/files/" + docId + "/export?mimeType=text/html";
-    
     const params = {
       method: "get",
       headers: { "Authorization": "Bearer " + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true // Important to check the response code manually
+      muteHttpExceptions: true
     };
     
     const response = UrlFetchApp.fetch(url, params);
-
-    if (response.getResponseCode() == 200) {
-      return response.getContentText();
-    } else {
-      // Log the error for debugging but don't break the add-on for the user.
-      const errorDetails = `Code: ${response.getResponseCode()}, Response: ${response.getContentText()}`;
-      console.error("Error fetching signature doc as HTML. " + errorDetails);
-      logAction("Error", "Failed to fetch signature doc HTML. " + errorDetails);
-      return null;
+    
+    if (response.getResponseCode() !== 200) {
+      return { success: false, html: null, error: "Failed to fetch signature document", sizeKB: 0 };
     }
+    
+    let signatureHtml = response.getContentText();
+    const originalSizeKB = Utilities.newBlob(signatureHtml).getBytes().length / 1024;
+    console.log(`Original signature size: ${originalSizeKB.toFixed(2)} KB`);
+    
+    // Get or create the signature images folder
+    let folder = getOrCreateSignatureFolder(SIGNATURE_FOLDER_NAME);
+    
+    // Clear old images from the folder
+    const oldFiles = folder.getFiles();
+    while (oldFiles.hasNext()) {
+      oldFiles.next().setTrashed(true);
+    }
+    
+    // Find all base64 encoded images in the HTML (capture the full tag to extract attributes)
+    const imgRegex = /<img([^>]*)src="data:image\/([^;]+);base64,([^"]+)"([^>]*)>/gi;
+    let processedHtml = signatureHtml;
+    let match;
+    let imageCount = 0;
+    const replacements = [];
+    
+    // Collect all image matches first (regex exec with replace can be tricky)
+    const tempHtml = signatureHtml;
+    while ((match = imgRegex.exec(tempHtml)) !== null) {
+      const fullMatch = match[0];
+      const beforeSrc = match[1] || '';
+      const imageType = match[2].toLowerCase();
+      const base64Data = match[3];
+      const afterSrc = match[4] || '';
+      
+      // Extract width and height from attributes
+      const widthMatch = fullMatch.match(/width="(\d+)"/i) || fullMatch.match(/width:(\d+)px/i);
+      const heightMatch = fullMatch.match(/height="(\d+)"/i) || fullMatch.match(/height:(\d+)px/i);
+      const styleMatch = fullMatch.match(/style="([^"]*)"/i);
+      
+      replacements.push({
+        fullMatch: fullMatch,
+        imageType: imageType,
+        base64Data: base64Data,
+        width: widthMatch ? widthMatch[1] : null,
+        height: heightMatch ? heightMatch[1] : null,
+        style: styleMatch ? styleMatch[1] : null
+      });
+    }
+    
+    // Process each image
+    for (const img of replacements) {
+      try {
+        // Decode base64 to blob
+        const imageBytes = Utilities.base64Decode(img.base64Data);
+        const imageSizeKB = imageBytes.length / 1024;
+        console.log(`Processing image: ${imageSizeKB.toFixed(2)} KB, width=${img.width}, height=${img.height}`);
+        
+        // Create blob and upload to Drive
+        const mimeType = img.imageType === 'png' ? 'image/png' : 'image/jpeg';
+        const blob = Utilities.newBlob(imageBytes, mimeType, `signature_image_${imageCount + 1}.${img.imageType}`);
+        const file = folder.createFile(blob);
+        
+        // Set sharing to anyone with link can view
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        
+        // Get the direct image URL
+        const fileId = file.getId();
+        const imageUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+        
+        // Build new img tag preserving original dimensions
+        let styleAttr = '';
+        if (img.width && img.height) {
+          styleAttr = `width:${img.width}px; height:${img.height}px;`;
+        } else if (img.width) {
+          styleAttr = `width:${img.width}px;`;
+        } else if (img.height) {
+          styleAttr = `height:${img.height}px;`;
+        } else if (img.style) {
+          // Preserve original style but remove any background-related properties
+          styleAttr = img.style.replace(/background[^;]*;?/gi, '');
+        }
+        
+        const newImgTag = `<img src="${imageUrl}"${styleAttr ? ` style="${styleAttr}"` : ''}>`;
+        processedHtml = processedHtml.replace(img.fullMatch, newImgTag);
+        
+        imageCount++;
+        console.log(`Uploaded image ${imageCount} to Drive: ${fileId}`);
+      } catch (imgError) {
+        console.error("Error processing image: " + imgError);
+        // Keep original image tag if upload fails
+      }
+    }
+    
+    // Strip Google redirect wrappers from hyperlinks
+    // Google Docs exports links as: https://www.google.com/url?q=REAL_URL&sa=D&source=editors&ust=...&usg=...
+    // We extract just the real URL from the q= parameter
+    processedHtml = processedHtml.replace(
+      /https?:\/\/www\.google\.com\/url\?q=([^&"]+)(?:&[^"]*)?/gi,
+      function(match, encodedUrl) {
+        try {
+          // Decode the URL (Google encodes special chars like %3A for :)
+          return decodeURIComponent(encodedUrl);
+        } catch (e) {
+          // If decoding fails, return the encoded URL as-is
+          return encodedUrl;
+        }
+      }
+    );
+    
+    // Strip Google Docs HTML bloat
+    processedHtml = processedHtml
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/ class="[^"]*"/gi, '')
+      .replace(/<span[^>]*>\s*<\/span>/gi, '')
+      .replace(/<p[^>]*>\s*<\/p>/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Calculate final size
+    const finalSizeKB = Utilities.newBlob(processedHtml).getBytes().length / 1024;
+    console.log(`Processed signature size: ${finalSizeKB.toFixed(2)} KB (was ${originalSizeKB.toFixed(2)} KB)`);
+    
+    // Check if processed signature fits in UserProperties (9KB limit)
+    if (finalSizeKB > 9) {
+      logAction("Error", `Processed signature (${finalSizeKB.toFixed(0)} KB) exceeds storage limit of 9KB`);
+      return { success: false, html: null, error: `Signature still too large (${finalSizeKB.toFixed(0)} KB). Max is 9KB.`, sizeKB: finalSizeKB };
+    }
+    
+    // Store processed signature in UserProperties (persistent, no expiry)
+    userProps.setProperty("SIGNATURE_PROCESSED_CACHE", processedHtml);
+    
+    if (imageCount > 0) {
+      logAction("Signature Processing", `Converted ${imageCount} image(s) to Drive URLs. Size: ${originalSizeKB.toFixed(0)} KB → ${finalSizeKB.toFixed(0)} KB`);
+    }
+    
+    return { success: true, html: processedHtml, error: null, sizeKB: finalSizeKB };
+    
   } catch (e) {
-    console.error("Exception occurred while fetching signature doc: " + e.toString());
-    logAction("Error", "Exception fetching signature doc: " + e.toString());
-    return null;
+    console.error("Exception in processSignatureImages: " + e.toString());
+    logAction("Error", "Exception processing signature: " + e.toString());
+    return { success: false, html: null, error: e.toString(), sizeKB: 0 };
   }
+}
+
+/**
+ * Gets or creates the folder for signature images.
+ */
+function getOrCreateSignatureFolder(folderName) {
+  const folders = DriveApp.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder(folderName);
 }
 
 /**

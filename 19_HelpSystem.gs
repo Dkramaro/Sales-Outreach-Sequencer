@@ -206,17 +206,33 @@ function createHelpDocument() {
     "• Column 1 (narrow): Your logo (merge all 4 rows)\n" +
     "• Column 2 (wide): Name, Title, Email, Phone (one per row)\n\n" +
     "Example:\n" +
-    "[LOGO]  |  Denis Kramarovsky\n" +
+    "[LOGO]  |  John Doe\n" +
     "[LOGO]  |  Account Executive\n" +
-    "[LOGO]  |  E: denis.kramarovsky@gmail.com\n" +
-    "[LOGO]  |  M: 647-888-7666"
+    "[LOGO]  |  E: John.Doe@gmail.com\n" +
+    "[LOGO]  |  M: 647-123-4567"
   );
   
-  const sigToggleH = body.appendParagraph("🔘 Enabling/Disabling Signature");
+  const sigToggleH = body.appendParagraph("🔘 Enabling Your Signature");
   sigToggleH.setHeading(DocumentApp.ParagraphHeading.HEADING3);
   
-  body.appendParagraph("After setup, you'll see a toggle switch in Settings to turn signature on/off. " +
-    "It's enabled by default. You can edit your signature anytime by clicking \"👁️ View Signature\".");
+  body.appendParagraph("After creating your signature document, the toggle is OFF by default. This gives you time to customize it first:");
+  body.appendListItem("Customize your signature in the Google Doc").setGlyphType(DocumentApp.GlyphType.NUMBER);
+  body.appendListItem("Return to Settings and flip the \"Append Signature to Emails\" toggle ON").setGlyphType(DocumentApp.GlyphType.NUMBER);
+  body.appendListItem("The system will process your signature (upload images to Drive for email compatibility)").setGlyphType(DocumentApp.GlyphType.NUMBER);
+  body.appendListItem("You'll see a confirmation with the signature size in KB").setGlyphType(DocumentApp.GlyphType.NUMBER);
+  
+  const sigRefreshH = body.appendParagraph("🔄 After Editing Your Signature");
+  sigRefreshH.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  
+  body.appendParagraph("If you make changes to your signature document later, you MUST click the \"🔄 Refresh\" button in Settings. " +
+    "This re-processes your signature and updates the cached version. Without refreshing, your emails will still use the old signature.");
+  
+  const sigLinksH = body.appendParagraph("🔗 Hyperlinks in Your Signature");
+  sigLinksH.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  
+  body.appendParagraph("When you add hyperlinks in Google Docs, Google wraps them in redirect URLs (google.com/url?q=...). " +
+    "Don't worry - the system automatically strips these and uses your original clean URLs in the final email. " +
+    "Your links will appear exactly as you intended (e.g., yourwebsite.com, not google.com/url?q=yourwebsite.com).");
   
   body.appendHorizontalRule();
   
@@ -424,8 +440,10 @@ function createHelpDocument() {
   
   const set5H = body.appendParagraph("Email Signature from Google Doc");
   set5H.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-  body.appendListItem("Link a Google Doc containing your HTML signature").setGlyphType(DocumentApp.GlyphType.BULLET);
-  body.appendListItem("It appends automatically to all emails").setGlyphType(DocumentApp.GlyphType.BULLET);
+  body.appendListItem("Click \"Setup Signature\" to create a pre-formatted signature document").setGlyphType(DocumentApp.GlyphType.BULLET);
+  body.appendListItem("Customize the doc, then toggle ON to enable (it's OFF by default)").setGlyphType(DocumentApp.GlyphType.BULLET);
+  body.appendListItem("After editing your signature, always click \"Refresh\" to update the cached version").setGlyphType(DocumentApp.GlyphType.BULLET);
+  body.appendListItem("Images are auto-uploaded to Drive; Google redirect URLs are auto-stripped from links").setGlyphType(DocumentApp.GlyphType.BULLET);
   
   const set6H = body.appendParagraph("Step 2 PDF Attachment");
   set6H.setHeading(DocumentApp.ParagraphHeading.HEADING2);

@@ -842,9 +842,20 @@ function buildContactViewCard(contact, editMode) {
                     .setParameters({ email: contact.email })));
         }
 
-        // End Sequence For Company button
-        if (contact.company && contact.company.trim() !== "") {
+        // End Sequence For Name button (only if contact is in active sequence)
+        if (contact.status === "Active") {
             actionsSection.addWidget(CardService.newDivider());
+            actionsSection.addWidget(CardService.newTextButton()
+                .setText("End Sequence For " + contact.firstName + " " + contact.lastName)
+                .setBackgroundColor("#d93025")
+                .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+                .setOnClickAction(CardService.newAction()
+                    .setFunctionName("endSequenceForContact")
+                    .setParameters({ email: contact.email })));
+        }
+
+        // End Sequence For Company button
+        if (contact.status === "Active" && contact.company && contact.company.trim() !== "") {
             actionsSection.addWidget(CardService.newTextButton()
                 .setText("End Sequence For Company (" + contact.company + ")")
                 .setBackgroundColor("#d93025")
